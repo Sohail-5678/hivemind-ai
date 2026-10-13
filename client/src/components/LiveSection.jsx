@@ -79,7 +79,8 @@ export function LiveSection({ runtime, initialCode = '' }) {
     setTimeout(() => setCopied(false), 1800)
   }
 
-  const leave = () => { setActive(null); window.location.hash = '' }
+  // Stay on the Live setup screen (drops a #/join/CODE link back to #/live).
+  const leave = () => { setActive(null); window.location.hash = '#/live' }
 
   if (active) {
     const isStatic = runtime.mode !== 'server'

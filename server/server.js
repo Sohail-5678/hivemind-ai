@@ -181,8 +181,19 @@ app.post('/api/sessions/:id/actions', (req, res) => {
 // ---------------------------------------------------------------------------
 const distDir = path.join(__dirname, '..', 'client', 'dist')
 if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir))
-  app.get(/^\/(?!api\/|ws).*/, (_req, res) => res.sendFile(path.join(distDir, 'index.html')))
+  // Hashed assets are immutable; index.html must always revalidate so a new
+  // build is picked up on the next load instead of a stale cached shell.
+  app.use(express.static(distDir, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      else res.setHeader('Cache-Control', 'no-cache')
+    },
+  }))
+  app.get(/^\/(?!api\/|ws).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache')
+    res.sendFile(path.join(distDir, 'index.html'))
+  })
 } else {
   app.get('/', (_req, res) => res.send('HiveMind server is running. Build the client with "npm run build", or use "npm run dev" for the dev server on :5173.'))
 }
