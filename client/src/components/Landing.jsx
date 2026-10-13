@@ -55,6 +55,7 @@ export function Landing({ onSelect, runtime }) {
             <button className="btn btn-primary" onClick={() => onSelect('demo')}>▶ Watch the demo</button>
             <button className="btn btn-ghost" onClick={() => onSelect('live')}>Create a live room →</button>
           </div>
+          <button className="text-link" onClick={() => onSelect('about')}>How it works &amp; how it's built →</button>
         </div>
 
         <div className="hero-stage" ref={stageRef} onMouseMove={onMove} onMouseLeave={onLeave}>
@@ -131,6 +132,7 @@ export function Landing({ onSelect, runtime }) {
         {runtime?.mode === 'server'
           ? 'Running on the full Node server — WebSocket rooms, SQLite timeline, cross-device multiplayer.'
           : 'Static deployment — multiplayer syncs across tabs via BroadcastChannel; the full server adds cross-device rooms and local models.'}
+        {' · '}<button className="text-link inline" onClick={() => onSelect('about')}>About this project</button>
         {' · '}<a href="https://github.com/Sohail-5678/hivemind-ai" target="_blank" rel="noreferrer">Source on GitHub</a>
       </div>
     </div>
