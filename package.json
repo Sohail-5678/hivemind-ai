@@ -1,0 +1,26 @@
+{
+  "name": "hivemind-ai",
+  "private": true,
+  "version": "1.0.0",
+  "description": "HiveMind — multiplayer AI agents. One shared live agent session your whole team can watch, steer, and hand off.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "postinstall": "npm --prefix client install",
+    "dev": "concurrently -k -n server,client -c blue,magenta \"node server/server.js\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix client run build && node server/server.js",
+    "serve": "node server/server.js",
+    "preview:static": "npm --prefix client run build && npm --prefix client run preview",
+    "test": "node test/smoke.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
