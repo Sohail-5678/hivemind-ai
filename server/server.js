@@ -89,8 +89,9 @@ app.get('/api/providers', async (_req, res) => {
     clearTimeout(timer)
     if (r.ok) {
       const data = await r.json()
-      providers.ollama.available = true
       providers.ollama.models = (data.models || []).map((m) => m.name).slice(0, 10)
+      // A running Ollama with nothing pulled can't serve a session — don't offer it.
+      providers.ollama.available = providers.ollama.models.length > 0
     }
   } catch { /* ollama not running — fine */ }
   res.json(providers)
