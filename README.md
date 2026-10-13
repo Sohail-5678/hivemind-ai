@@ -5,6 +5,8 @@
 
 **Live:** https://hivemind-agents.vercel.app · **Source:** https://github.com/Sohail-5678/hivemind-ai
 
+> New here? Read **[EXPLAINER.md](./EXPLAINER.md)** — the whole project in plain English: how it works, the hard problems it solves, interview talking points, and a 90-second demo script.
+
 ![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-021861?style=flat-square)
 ![React 18](https://img.shields.io/badge/react-18-255DCE?style=flat-square&logo=react&logoColor=white)
 ![Zero cloud deps](https://img.shields.io/badge/cloud%20deps-zero-DE1110?style=flat-square)
