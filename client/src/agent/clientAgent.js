@@ -53,10 +53,20 @@ async function runSimulated({ messages, redirected, signal, onDelta, onTool }) {
   await sleep(1100, signal)
   onTool('result', { tool: plan.tool.name, content: plan.tool.result })
   await sleep(400, signal)
-  for (const word of plan.text.split(/(?<=\s)/)) {
+  // Pace by wall-clock, not one timer per word: browsers clamp timers in
+  // background tabs to ~1/s, and the host tab is usually hidden while the user
+  // watches the joiner tab. Each wake-up emits every word whose time has come.
+  const words = plan.text.split(/(?<=\s)/)
+  const schedule = []
+  let t = 0
+  for (let i = 0; i < words.length; i++) { t += 18 + Math.random() * 30; schedule.push(t) }
+  const start = performance.now()
+  let i = 0
+  while (i < words.length) {
     if (signal.aborted) throw abortError()
-    onDelta(word)
-    await sleep(18 + Math.random() * 30, signal)
+    const elapsed = performance.now() - start
+    while (i < words.length && schedule[i] <= elapsed) onDelta(words[i++])
+    if (i < words.length) await sleep(Math.max(1, schedule[i] - (performance.now() - start)), signal)
   }
 }
 

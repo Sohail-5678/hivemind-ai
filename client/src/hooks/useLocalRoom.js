@@ -60,18 +60,11 @@ export function createLocalRoom({ name, mode = 'live', provider = 'simulated', m
   return session
 }
 
-function tabIdentity() {
-  try {
-    let id = sessionStorage.getItem('hivemind_tab_uid')
-    if (!id) {
-      id = `u_${Math.random().toString(36).slice(2, 10)}`
-      sessionStorage.setItem('hivemind_tab_uid', id)
-    }
-    return id
-  } catch {
-    return `u_${Math.random().toString(36).slice(2, 10)}`
-  }
-}
+// Per page-load identity. Deliberately NOT sessionStorage: browsers copy
+// sessionStorage into a duplicated/reopened tab, which would make two tabs
+// share one id and both end up hosting the same room.
+const TAB_ID = `u_${(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 8)}`
+function tabIdentity() { return TAB_ID }
 
 function colorFor(id) {
   let h = 0
@@ -103,6 +96,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
   const typingRef = useRef(false)
   const hostSeenRef = useRef(false)
   const hostApiRef = useRef(null)
+  const pendingRef = useRef([]) // non-host actions awaiting a host ack
   const apiKeyRef = useRef(apiKey)
   apiKeyRef.current = apiKey
 
@@ -127,6 +121,9 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
     hostSeenRef.current = false
     peersRef.current = new Map()
     runRef.current = null
+    pendingRef.current = []
+    let snapshotTimer = null
+    let adopted = false
 
     const post = (payload) => { if (!guard.closed) { try { chan.postMessage(payload) } catch { /* closed */ } } }
     const participants = () => [
@@ -195,7 +192,13 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         .catch((err) => {
           if (err?.name === 'AbortError' || run.controller.signal.aborted) {
             const reason = run.abortReason || 'stop'
-            if (reason === 'pause') {
+            if (reason === 'demoted') {
+              // Another tab is the rightful host — drop this run silently so we
+              // don't broadcast status/partials over the surviving host's run.
+              run.done = true
+              if (run.flushTimer) clearTimeout(run.flushTimer)
+              runRef.current = null
+            } else if (reason === 'pause') {
               finish('paused', run.text.trim() ? { partial: true, reason: 'paused' } : null)
               emit({ type: 'agent_paused', by: run.abortActor || null })
             } else if (reason === 'redirect') {
@@ -219,6 +222,17 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
       run.abortActor = actor
       run.controller.abort()
       return true
+    }
+
+    // Split-brain guard: if two tabs ever both believe they host (throttled
+    // background tab, race during takeover), the lowest id wins and the other
+    // demotes itself and re-syncs from the survivor's snapshot.
+    const demote = () => {
+      if (!hostRef.current) return
+      abortRun('demoted', null)
+      hostRef.current = false
+      adopted = false
+      post({ t: 'hello', user: you })
     }
 
     // ---------------- Host: actions ----------------
@@ -296,6 +310,10 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
       dispatch({ type: 'joined', session: room.session, you, events: eventsRef.current, participants: participants(), agentStatus: statusRef.current, streaming: null })
       const joinEvent = appendEvent('join', you)
       if (takeover) appendEvent('system', null, `${you.name}'s tab took over hosting this session.`)
+      // Replay anything this tab sent while no host was listening.
+      const pending = pendingRef.current
+      pendingRef.current = []
+      for (const p of pending) hostHandle(p.action, p.payload, you)
       return joinEvent
     }
 
@@ -311,9 +329,6 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
       emit({ type: 'agent_done', runId: 'lost', event: null, partial: true })
     }
 
-    let snapshotTimer = null
-    let adopted = false
-
     chan.onmessage = ({ data }) => {
       if (guard.closed || !data || typeof data.t !== 'string') return
       const { t } = data
@@ -328,7 +343,8 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
           post({
             t: 'snapshot', to: user.id, session: sessionRef.current, events: eventsRef.current,
             participants: participants(), agentStatus: run ? 'running' : statusRef.current,
-            streaming: run ? { runId: run.id, text: run.text } : null,
+            // Exclude text still sitting in run.pending — it arrives via the next agent_token flush.
+            streaming: run ? { runId: run.id, text: run.text.slice(0, run.text.length - run.pending.length) } : null,
           })
           appendEvent('join', user)
         }
@@ -352,7 +368,12 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         const existing = peersRef.current.get(user.id)
         peersRef.current.set(user.id, { user, lastSeen: Date.now(), typing: Boolean(data.typing), host: t === 'heartbeat' ? Boolean(data.host) : existing?.host || false })
         if (data.host) hostSeenRef.current = true
+        if (t === 'heartbeat' && data.host && hostRef.current && user.id < you.id) demote()
         pushPresence()
+        return
+      }
+      if (t === 'ack') {
+        if (data.to === you.id) pendingRef.current = pendingRef.current.filter((p) => p.id !== data.id)
         return
       }
       if (t === 'bye') {
@@ -366,7 +387,10 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         return
       }
       if (t === 'action') {
-        if (hostRef.current) hostHandle(data.action, data.payload, data.from)
+        if (hostRef.current) {
+          hostHandle(data.action, data.payload, data.from)
+          if (data.id) post({ t: 'ack', id: data.id, to: data.from?.id })
+        }
         return
       }
       if (t === 'msg') {
@@ -410,6 +434,14 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         }
       }
       if (changed) { pushPresence(); electIfHostless() }
+      // Actions that never got a host ack while a host looked alive are truly lost — say so.
+      if (!hostRef.current && pendingRef.current.length) {
+        const stale = pendingRef.current.filter((p) => now - p.at > PEER_TTL_MS)
+        if (stale.length && [...peersRef.current.values()].some((p) => p.host)) {
+          pendingRef.current = pendingRef.current.filter((p) => now - p.at <= PEER_TTL_MS)
+          dispatch({ type: 'local_notice', notice: 'Your last action didn’t reach the host tab — please try again.' })
+        }
+      }
     }, HEARTBEAT_MS)
     guard.timers.push(heartbeat)
 
@@ -418,12 +450,17 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
 
     const onUnload = () => post({ t: 'bye', user: you })
     window.addEventListener('beforeunload', onUnload)
+    // A tab coming back from the background re-announces immediately so peers
+    // don't mistake a throttled heartbeat for a dead host.
+    const onVisible = () => { if (document.visibilityState === 'visible') post({ t: 'heartbeat', user: you, typing: typingRef.current, host: hostRef.current }) }
+    document.addEventListener('visibilitychange', onVisible)
 
     return () => {
       guard.closed = true
       clearInterval(heartbeat)
       if (snapshotTimer) clearTimeout(snapshotTimer)
       window.removeEventListener('beforeunload', onUnload)
+      document.removeEventListener('visibilitychange', onVisible)
       if (runRef.current) { try { runRef.current.controller.abort() } catch { /* fine */ } }
       try { chan.postMessage({ t: 'bye', user: you }) } catch { /* fine */ }
       try { chan.close() } catch { /* fine */ }
@@ -435,8 +472,14 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
   const dispatchAction = useCallback((action, payload = {}) => {
     const api = hostApiRef.current
     if (!api) throw new Error('Not connected to the room yet.')
-    if (hostRef.current) api.hostHandle(action, payload, you)
-    else api.post({ t: 'action', action, payload, from: you })
+    if (hostRef.current) {
+      api.hostHandle(action, payload, you)
+    } else {
+      // Remember it until a host acks; replayed if this tab becomes host.
+      const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+      pendingRef.current.push({ id, action, payload, at: Date.now() })
+      api.post({ t: 'action', id, action, payload, from: you })
+    }
     return { ok: true }
   }, [you])
 

@@ -14,11 +14,23 @@ export function topicOf(text) {
   return words.length ? words.join(' ') : 'this task'
 }
 
+// Steering messages look like "[Alice redirected you mid-run]: <instruction>. Drop your …".
+// Extract the instruction itself; a resume carries no topic, so fall through to
+// the teammate's last real message.
+const STEERING_SUFFIX = /\.?\s*(Drop your previous direction and follow this immediately\.?|Follow this new direction\.?)\s*$/i
+
 export function lastUserText(messages) {
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
-      return messages[i].content.replace(/^\[?[A-Za-z0-9 _-]{1,40}( redirected the agent)?\]?:\s*/, '')
+    if (messages[i].role !== 'user') continue
+    const content = String(messages[i].content || '')
+    const steer = content.match(/^\[([^\]]{1,80})\]:\s*([\s\S]*)$/)
+    if (steer) {
+      if (/ resumed the session$/i.test(steer[1])) continue
+      const body = steer[2].replace(STEERING_SUFFIX, '').trim()
+      if (body) return body
+      continue
     }
+    return content.replace(/^[A-Za-z0-9 _-]{1,40}:\s*/, '')
   }
   return 'the task'
 }

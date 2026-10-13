@@ -38,7 +38,8 @@ export function agentStatus(sessionId) {
 export function getRunSnapshot(sessionId) {
   const run = runs.get(sessionId)
   if (!run) return null
-  return { runId: run.id, text: run.text }
+  // Exclude bytes still sitting in run.pending: they arrive via the next agent_token flush.
+  return { runId: run.id, text: run.text.slice(0, run.text.length - run.pending.length) }
 }
 
 const AGENT_AUTHOR = { id: 'agent', name: 'HiveMind', color: '#255DCE' }

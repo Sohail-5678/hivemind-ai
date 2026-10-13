@@ -5,7 +5,7 @@
 
 **Live:** https://hivemind-agents.vercel.app · **Source:** https://github.com/Sohail-5678/hivemind-ai
 
-![Node 22+](https://img.shields.io/badge/node-22%2B-021861?style=flat-square)
+![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-021861?style=flat-square)
 ![React 18](https://img.shields.io/badge/react-18-255DCE?style=flat-square&logo=react&logoColor=white)
 ![Zero cloud deps](https://img.shields.io/badge/cloud%20deps-zero-DE1110?style=flat-square)
 ![Tests](https://img.shields.io/badge/e2e%20tests-33%20passing-255DCE?style=flat-square)
@@ -50,7 +50,7 @@ npm install
 npm start
 ```
 
-Open **http://localhost:3000**. No API keys, no accounts. Requires Node ≥ 22.5 (zero native dependencies).
+Open **http://localhost:3000**. No API keys, no accounts. Requires Node ≥ 22.13 (built-in SQLite — zero native dependencies).
 
 The terminal prints a **Network URL** — anyone on your WiFi can open it and join your room with the 6-character code. For someone remote: `npx cloudflared tunnel --url http://localhost:3000`.
 
