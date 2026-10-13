@@ -3,7 +3,7 @@
 > **AI had its chat moment. This is its multiplayer moment.**
 > One shared, live agent session your whole team can watch, steer, and hand off — like a Google Doc, except the document is an AI agent doing real work.
 
-**Live:** https://hivemind-ai.vercel.app · **Source:** https://github.com/Sohail-5678/hivemind-ai
+**Live:** https://hivemind-agents.vercel.app · **Source:** https://github.com/Sohail-5678/hivemind-ai
 
 ![Node 22+](https://img.shields.io/badge/node-22%2B-021861?style=flat-square)
 ![React 18](https://img.shields.io/badge/react-18-255DCE?style=flat-square&logo=react&logoColor=white)
