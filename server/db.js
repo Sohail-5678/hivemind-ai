@@ -131,10 +131,12 @@ export function getEvent(id) {
   return rowToEvent(db.prepare(`SELECT * FROM events WHERE id = ?`).get(id))
 }
 
+// Newest `limit` events in chronological order (a long-lived room must never
+// freeze its snapshot at the first N rows).
 export function getEvents(sessionId, { sinceId = 0, limit = 500 } = {}) {
   return db.prepare(
-    `SELECT * FROM events WHERE session_id = ? AND id > ? ORDER BY id ASC LIMIT ?`
-  ).all(sessionId, sinceId, limit).map(rowToEvent)
+    `SELECT * FROM events WHERE session_id = ? AND id > ? ORDER BY id DESC LIMIT ?`
+  ).all(sessionId, sinceId, limit).map(rowToEvent).reverse()
 }
 
 // Fork: a new session that copies the timeline (optionally up to an event id).

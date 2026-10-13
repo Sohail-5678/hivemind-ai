@@ -128,6 +128,15 @@ export function attachWebSocket(httpServer) {
 
       if (msg.type === 'typing') {
         client.typing = Boolean(msg.isTyping)
+        // A lost/dropped "stopped typing" frame must never pin the indicator on.
+        if (client.typingTimer) clearTimeout(client.typingTimer)
+        if (client.typing) {
+          client.typingTimer = setTimeout(() => {
+            client.typing = false
+            client.typingTimer = null
+            if (client.sessionId) broadcast(client.sessionId, { type: 'presence', participants: participantsOf(client.sessionId) }, { except: client })
+          }, 5000)
+        }
         broadcast(client.sessionId, { type: 'presence', participants: participantsOf(client.sessionId) }, { except: client })
         return
       }
@@ -141,6 +150,7 @@ export function attachWebSocket(httpServer) {
 
   function announceLeave(client) {
     const { sessionId, user } = client
+    if (client.typingTimer) { clearTimeout(client.typingTimer); client.typingTimer = null }
     if (!sessionId) return
     leaveRoom(client)
     if (user) {

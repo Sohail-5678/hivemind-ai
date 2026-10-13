@@ -6,9 +6,16 @@ export function Composer({ status, onSend, onAction, onTyping, onNotice, disable
   const [redirectText, setRedirectText] = useState('')
   const [busy, setBusy] = useState(false)
   const typingTimer = useRef(null)
+  const isTyping = useRef(false)
 
   const running = status === 'running'
   const paused = status === 'paused'
+
+  // Typing frames only on transitions (start / stop), never per keystroke.
+  const stopTyping = () => {
+    if (typingTimer.current) { clearTimeout(typingTimer.current); typingTimer.current = null }
+    if (isTyping.current) { isTyping.current = false; onTyping && onTyping(false) }
+  }
 
   const submit = async () => {
     const content = text.trim()
@@ -22,7 +29,7 @@ export function Composer({ status, onSend, onAction, onTyping, onNotice, disable
       onNotice && onNotice(err.message)
     } finally {
       setBusy(false)
-      onTyping && onTyping(false)
+      stopTyping()
     }
   }
 
@@ -37,9 +44,9 @@ export function Composer({ status, onSend, onAction, onTyping, onNotice, disable
   const handleTyping = (value) => {
     setText(value)
     if (!onTyping) return
-    onTyping(true)
+    if (!isTyping.current) { isTyping.current = true; onTyping(true) }
     if (typingTimer.current) clearTimeout(typingTimer.current)
-    typingTimer.current = setTimeout(() => onTyping(false), 1400)
+    typingTimer.current = setTimeout(stopTyping, 1400)
   }
 
   const doAction = async (action) => {

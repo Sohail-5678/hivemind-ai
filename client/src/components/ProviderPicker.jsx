@@ -37,7 +37,22 @@ export function ProviderFields({ runtime, providers, provider, setProvider, mode
     <>
       <div className="field">
         <label>Agent brain</label>
-        <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+        <select
+          value={provider}
+          onChange={(e) => {
+            // Each brain starts from its own default model — never carry one across.
+            const next = e.target.value
+            setProvider(next)
+            if (next === 'ollama') {
+              const models = providers?.ollama?.models || []
+              setModel(models.find((m) => m.startsWith('llama')) || models[0] || '')
+            } else if (next === 'groq') {
+              setModel('llama-3.1-8b-instant')
+            } else {
+              setModel('')
+            }
+          }}
+        >
           <option value="simulated">Simulated — instant, no setup</option>
           {serverMode && (
             <option value="ollama" disabled={!ollamaAvailable}>
