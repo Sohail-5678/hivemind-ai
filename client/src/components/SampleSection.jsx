@@ -58,7 +58,7 @@ export function SampleSection({ runtime }) {
     <div className="setup-wrap">
       <div className="setup-card glass">
         <h3>Try the agent yourself</h3>
-        <p className="hint">A private session to learn the mechanics — send messages, redirect mid-stream, pause, resume, fork.</p>
+        <p className="hint">A private, solo session to learn the mechanics — send messages, redirect mid-stream, pause, resume, fork. It has no invite code by design; to work with others, use Live.</p>
         {error && <div className="error-note">{error}</div>}
         <div className="field">
           <label>Your name</label>

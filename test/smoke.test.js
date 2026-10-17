@@ -152,6 +152,16 @@ async function main() {
     await waitFor(bob, (m) => m.type === 'session_forked', 'Bob sees fork notification')
     check('fork broadcast to teammates', true)
 
+    // --- Message sent while the agent is busy still gets answered ----------
+    const q = (await post('/api/sessions', { name: 'Queue Test', provider: 'simulated' })).data.session
+    const qc = await connect(q.id, 'Dana')
+    await post(`/api/sessions/${q.id}/messages`, { content: 'Draft the launch plan', user: { name: 'Dana' } })
+    await waitFor(qc, (m) => m.type === 'agent_token', 'first run streaming')
+    await post(`/api/sessions/${q.id}/messages`, { content: 'Also list the top risks', user: { name: 'Eli' } })
+    await waitFor(qc, () => qc.inbox.filter((m) => m.type === 'agent_done' && m.event).length >= 2, 'queued message answered', 30000)
+    check('message sent mid-run is answered by a follow-up run', qc.inbox.filter((m) => m.type === 'agent_started').length >= 2)
+    qc.ws.close()
+
     // --- Guardrails --------------------------------------------------------
     const longMsg = await post(`/api/sessions/${session.id}/messages`, { content: 'x'.repeat(5000), user: { name: 'Alice' } })
     check('over-length message capped, not crashed', [202, 400, 429].includes(longMsg.status))

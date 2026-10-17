@@ -6,7 +6,7 @@
 // Host model: the creator hosts. Every tab mirrors the full timeline, so if
 // the host tab closes, the remaining tab with the lowest id takes over.
 // Late joiners get a snapshot (timeline + in-flight run text) from the host.
-import { useEffect, useReducer, useRef, useCallback, useMemo } from 'react'
+import { useEffect, useReducer, useRef, useCallback, useMemo, useState } from 'react'
 import { sessionReducer, initialSessionState } from './sessionReducer'
 import { runClientAgent, buildMessages } from '../agent/clientAgent'
 import { openRoomChannel } from '../lib/relay'
@@ -15,8 +15,8 @@ const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const PALETTE = ['#4F8FE8', '#E85D55', '#9DB8FF', '#DE1110', '#7B61FF', '#2BB3A3', '#F0A23B', '#C56BD6']
 const AGENT = { id: 'agent', name: 'HiveMind', color: '#255DCE' }
 const HEARTBEAT_MS = 2000
-const PEER_TTL_MS = 7000
-const SNAPSHOT_WAIT_MS = 5000      // joiner waits this long (after a relay connects) for a live host
+const PEER_TTL_MS = 20000         // background tabs heartbeat slowly; a real close sends "bye" at once
+const SNAPSHOT_WAIT_MS = 8000      // joiner waits this long (after a relay connects) for a live host
 const HELLO_RETRY_MS = 1500
 const SNAPSHOT_MAX_EVENTS = 120    // keeps snapshot frames well under public-relay size limits
 const FLUSH_MS = 60
@@ -102,6 +102,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
   const hostApiRef = useRef(null)
   const pendingRef = useRef([]) // non-host actions awaiting a host ack
   const relaysRef = useRef(0)   // relays currently connected (for error copy)
+  const [relays, setRelays] = useState(null) // null until the first status report
   const apiKeyRef = useRef(apiKey)
   apiKeyRef.current = apiKey
 
@@ -123,7 +124,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
     let onFrame = () => {}
     const chan = openRoomChannel(code, {
       onMessage: (data) => onFrame({ data }),
-      onStatus: ({ relays }) => { relaysRef.current = relays },
+      onStatus: ({ relays: n }) => { relaysRef.current = n; setRelays(n) },
     })
     chanRef.current = chan
     hostRef.current = false
@@ -155,6 +156,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
     // ---------------- Host: agent engine ----------------
     const startRun = ({ steering = null, redirected = false } = {}) => {
       if (runRef.current || !sessionRef.current) return
+      const eventsAtStart = eventsRef.current.length
       const run = { id: `run_${Math.random().toString(36).slice(2, 10)}`, controller: new AbortController(), text: '', pending: '', flushTimer: null, abortReason: null, abortActor: null, followUpSteering: null, done: false }
       runRef.current = run
       setStatusAll('running')
@@ -197,7 +199,13 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         signal: run.controller.signal, onDelta, onTool,
         onNotice: (notice) => emit({ type: 'agent_notice', notice }),
       })
-        .then(() => finish('idle'))
+        .then(() => {
+          finish('idle')
+          // Teammates may have messaged while the agent was busy — answer them
+          // instead of leaving those messages silently unanswered.
+          const queued = eventsRef.current.slice(eventsAtStart).some((e) => e.type === 'user_message')
+          if (queued) setTimeout(() => { if (!guard.closed && !runRef.current && statusRef.current !== 'paused') startRun() }, 0)
+        })
         .catch((err) => {
           if (err?.name === 'AbortError' || run.controller.signal.aborted) {
             const reason = run.abortReason || 'stop'
@@ -550,5 +558,5 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
   const clearFork = useCallback(() => dispatch({ type: 'clear_fork' }), [])
   const notify = useCallback((notice) => dispatch({ type: 'local_notice', notice }), [])
 
-  return { ...state, you, isHost: hostRef.current, sendMessage, act, setTyping, clearNotice, clearFork, notify }
+  return { ...state, you, relays, isHost: hostRef.current, sendMessage, act, setTyping, clearNotice, clearFork, notify }
 }

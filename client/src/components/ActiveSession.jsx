@@ -7,7 +7,7 @@ import { SessionWorkspace } from './SessionWorkspace'
 // from the runtime (server → WebSocket, static → encrypted relay) and handles
 // the "you forked → hop into the fork" navigation plus connection errors.
 
-function Connected({ s, renderShareBar, banner, onExit }) {
+function Connected({ s, renderShareBar, banner, onExit, onRetry }) {
   const [localNotice, setLocalNotice] = useState(null)
 
   const notice = s.notice || localNotice
@@ -18,7 +18,10 @@ function Connected({ s, renderShareBar, banner, onExit }) {
       <div className="setup-card glass" style={{ maxWidth: 560 }}>
         <h3>Couldn't open that session</h3>
         <div className="error-note">{s.error || 'Unknown error.'}</div>
-        <button className="btn btn-ghost" onClick={onExit}>← Back</button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {onRetry && <button className="btn btn-primary" onClick={onRetry}>Try again</button>}
+          <button className="btn btn-ghost" onClick={onExit}>← Back</button>
+        </div>
       </div>
     )
   }
@@ -64,6 +67,8 @@ function LocalSession({ roomCode, userName, apiKey, preferHost, onFork, ...rest 
 export function ActiveSession({ mode, sessionId, roomCode, userName, apiKey, preferHost = false, renderShareBar, banner, onExit }) {
   const [target, setTarget] = useState({ sessionId, roomCode, preferHost })
   const [forkNotice, setForkNotice] = useState(null)
+  const [attempt, setAttempt] = useState(0)
+  const onRetry = () => setAttempt((n) => n + 1)
 
   useEffect(() => { setTarget({ sessionId, roomCode, preferHost }) }, [sessionId, roomCode, preferHost])
 
@@ -85,7 +90,7 @@ export function ActiveSession({ mode, sessionId, roomCode, userName, apiKey, pre
   )
 
   if (mode === 'server') {
-    return <ServerSession key={target.sessionId} sessionId={target.sessionId} userName={userName} onFork={onFork} renderShareBar={renderShareBar} banner={wrappedBanner} onExit={onExit} />
+    return <ServerSession key={`${target.sessionId}:${attempt}`} onRetry={onRetry} sessionId={target.sessionId} userName={userName} onFork={onFork} renderShareBar={renderShareBar} banner={wrappedBanner} onExit={onExit} />
   }
-  return <LocalSession key={target.roomCode} roomCode={target.roomCode} userName={userName} apiKey={apiKey} preferHost={target.preferHost} onFork={onFork} renderShareBar={renderShareBar} banner={wrappedBanner} onExit={onExit} />
+  return <LocalSession key={`${target.roomCode}:${attempt}`} onRetry={onRetry} roomCode={target.roomCode} userName={userName} apiKey={apiKey} preferHost={target.preferHost} onFork={onFork} renderShareBar={renderShareBar} banner={wrappedBanner} onExit={onExit} />
 }

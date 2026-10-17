@@ -97,11 +97,17 @@ export function LiveSection({ runtime, initialCode = '' }) {
           apiKey={active.apiKey}
           preferHost={active.preferHost}
           onExit={leave}
-          renderShareBar={(session) => session && (
+          renderShareBar={(session, room) => session && (
             <div className="share-bar">
               <span>Invite your team:</span>
               <span className="room-code">{session.roomCode}</span>
               <button className="copy-btn" onClick={() => copyInvite(session)}>{copied ? '✓ Copied' : 'Copy invite link'}</button>
+              {isStatic && room?.relays != null && (
+                <span className={`relay-chip ${room.relays > 0 ? 'ok' : 'down'}`} title="Encrypted relays this tab is connected to">
+                  <span className="dot" />
+                  {room.relays > 0 ? `Reachable · ${room.relays} relay${room.relays === 1 ? '' : 's'}` : 'Not reachable from other devices — check your network'}
+                </span>
+              )}
               <span style={{ opacity: 0.8 }}>
                 {isStatic
                   ? 'Send the link to anyone — phone or laptop, any network. Rooms are end-to-end encrypted and live in your browser, so keep this tab open while others are in.'
