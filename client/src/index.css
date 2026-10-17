@@ -523,3 +523,11 @@ input, select, textarea { font-family: inherit; font-size: 14px; color: var(--in
   .timeline { padding: 16px 14px 8px; }
   .composer { padding: 12px 14px; }
 }
+
+/* Markdown tables and rules from real model output */
+.tl-content hr { border: none; border-top: 1px solid var(--glass-border); margin: 10px 0; }
+.tl-content em { font-style: italic; color: var(--sky-soft); }
+.tl-content .md-table { overflow-x: auto; margin: 8px 0; }
+.tl-content table { border-collapse: collapse; font-size: 13.5px; min-width: 60%; }
+.tl-content th { text-align: left; font-weight: 600; color: var(--sky); padding: 6px 10px; border-bottom: 1px solid var(--glass-border-strong); }
+.tl-content td { padding: 6px 10px; border-bottom: 1px solid var(--glass-border); vertical-align: top; }
