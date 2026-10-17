@@ -6,6 +6,18 @@ import { simulatedPlan, topicOf, lastUserText } from '@shared/simulated.js'
 
 const FIRST_TOKEN_TIMEOUT_MS = 15_000
 
+// AbortSignal.any is missing on older Safari (< 17.4) — combine signals by hand there.
+function anySignal(signals) {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals)
+  const controller = new AbortController()
+  for (const s of signals) {
+    if (s.aborted) { controller.abort(s.reason); break }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true })
+  }
+  return controller.signal
+}
+
+
 function abortError() {
   const err = new Error('aborted')
   err.name = 'AbortError'
@@ -133,7 +145,7 @@ export async function runClientAgent({ provider, model, apiKey, messages, redire
   for (let attempt = 0; ; attempt++) {
     const firstToken = new AbortController()
     const deadline = setTimeout(() => firstToken.abort(new Error('first_token_timeout')), FIRST_TOKEN_TIMEOUT_MS)
-    const providerSignal = AbortSignal.any([signal, firstToken.signal])
+    const providerSignal = anySignal([signal, firstToken.signal])
     try {
       const { url, body } = providerRequest(provider, { messages, model, apiKey })
       for await (const chunk of streamOpenAICompatible({ url, body, signal: providerSignal })) {

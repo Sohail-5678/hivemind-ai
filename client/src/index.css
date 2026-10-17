@@ -531,3 +531,10 @@ input, select, textarea { font-family: inherit; font-size: 14px; color: var(--in
 .tl-content table { border-collapse: collapse; font-size: 13.5px; min-width: 60%; }
 .tl-content th { text-align: left; font-weight: 600; color: var(--sky); padding: 6px 10px; border-bottom: 1px solid var(--glass-border-strong); }
 .tl-content td { padding: 6px 10px; border-bottom: 1px solid var(--glass-border); vertical-align: top; }
+
+.relay-chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--glass-border); }
+.relay-chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+.relay-chip.ok { color: var(--sky-soft); background: rgba(37, 93, 206, 0.18); }
+.relay-chip.ok .dot { background: #5BD6A5; box-shadow: 0 0 8px #5BD6A5; }
+.relay-chip.down { color: #FFD2CF; background: var(--red-glass); border-color: var(--red-border); }
+.relay-chip.down .dot { background: var(--red-light); }

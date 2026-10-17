@@ -10,10 +10,13 @@
 // relay operators see neither the code nor the content, and brute-forcing a
 // 6-character code costs 100k PBKDF2 rounds per guess.
 
+// Mixed ports on purpose: three relays on 8xxx and one on 443, the standard
+// HTTPS port, so rooms still connect on Wi-Fi that blocks non-standard ports.
 const RELAYS = [
-  'wss://broker.hivemq.com:8884/mqtt',
-  'wss://broker.emqx.io:8084/mqtt',
-  'wss://test.mosquitto.org:8081/mqtt',
+  { url: 'wss://broker.hivemq.com:8884/mqtt' },
+  { url: 'wss://broker.emqx.io:8084/mqtt' },
+  { url: 'wss://test.mosquitto.org:8081/mqtt' },
+  { url: 'wss://public.cloud.shiftr.io:443', auth: { username: 'public', password: 'public' } },
 ]
 const PBKDF2_ROUNDS = 100_000
 const READY_TIMEOUT_MS = 8000
@@ -85,10 +88,10 @@ export function openRoomChannel(code, { onMessage, onStatus }) {
       let mqtt
       try { mqtt = (await import('mqtt')).default } catch { clearTimeout(timer); resolve({ relays: 0 }); reportStatus(); return }
       if (state.closed) return
-      for (const url of RELAYS) {
+      for (const relay of RELAYS) {
         let client
         try {
-          client = mqtt.connect(url, { connectTimeout: 7000, reconnectPeriod: 3000, keepalive: 45, clean: true })
+          client = mqtt.connect(relay.url, { connectTimeout: 7000, reconnectPeriod: 3000, keepalive: 45, clean: true, ...(relay.auth || {}) })
         } catch { continue }
         state.clients.push(client)
         client.on('connect', () => {

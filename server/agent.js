@@ -16,6 +16,18 @@ const MAX_CONCURRENT_RUNS = 4
 const FLUSH_MS = 90
 const FLUSH_CHARS = 24
 
+// AbortSignal.any is missing on older Safari (< 17.4) — combine signals by hand there.
+function anySignal(signals) {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals)
+  const controller = new AbortController()
+  for (const s of signals) {
+    if (s.aborted) { controller.abort(s.reason); break }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true })
+  }
+  return controller.signal
+}
+
+
 const runs = new Map()        // sessionId -> active run
 const sessionKeys = new Map() // sessionId -> Groq key (BYOK — memory only, never persisted or logged)
 
@@ -203,6 +215,7 @@ export function startRun(sessionId, { steering = null, redirected = false } = {}
   }
 
   const runId = `run_${randomUUID().slice(0, 8)}`
+  const startEventId = getEvents(sessionId, { limit: 1 }).at(-1)?.id || 0
   const controller = new AbortController()
   const run = { id: runId, sessionId, controller, text: '', pending: '', flushTimer: null, abortReason: null, abortActor: null, followUpSteering: null, done: false }
   runs.set(sessionId, run)
@@ -247,6 +260,9 @@ export function startRun(sessionId, { steering = null, redirected = false } = {}
       const messages = buildMessages(session, steering)
       await executeProvider(session, run, messages, { onDelta, redirected })
       finishRun('idle')
+      // Answer teammates who messaged while the agent was busy.
+      const queued = getEvents(sessionId, { sinceId: startEventId }).some((e) => e.type === 'user_message')
+      if (queued) setImmediate(() => { if (!runs.has(sessionId) && getSession(sessionId)?.status !== 'paused') startRun(sessionId) })
     } catch (err) {
       if (err?.name === 'AbortError' || controller.signal.aborted) {
         const reason = run.abortReason || 'stop'
@@ -296,7 +312,7 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
   for (let attempt = 0; ; attempt++) {
   const firstToken = new AbortController()
   const deadline = setTimeout(() => firstToken.abort(new Error('provider_first_token_timeout')), FIRST_TOKEN_TIMEOUT_MS)
-  const providerSignal = AbortSignal.any([signal, firstToken.signal])
+  const providerSignal = anySignal([signal, firstToken.signal])
   try {
     const stream = provider === 'ollama'
       ? streamOllama({ messages, model: session.model, signal: providerSignal })
