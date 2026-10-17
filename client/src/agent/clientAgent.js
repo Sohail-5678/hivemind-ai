@@ -47,7 +47,7 @@ export function buildMessages({ sessionName, participantNames, events, steering 
 
 async function runSimulated({ messages, redirected, signal, onDelta, onTool }) {
   const topic = topicOf(lastUserText(messages))
-  const plan = simulatedPlan(topic, redirected)
+  const plan = simulatedPlan(topic, redirected, lastUserText(messages))
   await sleep(500, signal)
   onTool('call', { tool: plan.tool.name, content: plan.tool.args.query })
   await sleep(1100, signal)
@@ -70,17 +70,23 @@ async function runSimulated({ messages, redirected, signal, onDelta, onTool }) {
   }
 }
 
-async function* streamGroqViaEdge({ messages, model, apiKey, signal }) {
-  const res = await fetch('/api/chat', {
+// One streamer for every OpenAI-compatible SSE endpoint. Yields text deltas,
+// plus { alive: true } for chunks that carry no visible text (e.g. a reasoning
+// model "thinking"), so the first-token deadline doesn't fire on a live stream.
+async function* streamOpenAICompatible({ url, body, signal }) {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, model, apiKey }),
+    body: JSON.stringify(body),
     signal,
   })
   if (!res.ok) {
-    let detail = ''
-    try { detail = (await res.json())?.error || '' } catch { /* non-JSON */ }
-    throw new Error(detail || `groq_http_${res.status}`)
+    let data = null
+    try { data = await res.json() } catch { /* non-JSON */ }
+    const err = new Error(data?.error?.message || data?.error || `http_${res.status}`)
+    err.status = res.status
+    err.retryAfter = Number(res.headers.get('retry-after')) || Number(String(data?.error?.message || '').match(/Retry after (\d+)s/)?.[1]) || null
+    throw err
   }
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -100,35 +106,62 @@ async function* streamGroqViaEdge({ messages, model, apiKey, signal }) {
       try { json = JSON.parse(data) } catch { continue }
       const delta = json.choices?.[0]?.delta?.content
       if (delta) yield delta
+      else yield { alive: true }
     }
   }
 }
 
+const FREE_MODEL_URL = 'https://text.pollinations.ai/openai'
+const MAX_COOLDOWN_WAITS = 2
+
+function providerRequest(provider, { messages, model, apiKey }) {
+  if (provider === 'free') {
+    // Called straight from the host's browser (CORS-open), so the free tier's
+    // per-IP limit applies to each host, not to one shared server address.
+    return { url: FREE_MODEL_URL, body: { model: 'openai', messages, stream: true } }
+  }
+  return { url: '/api/chat', body: { messages, model, apiKey } }
+}
+
+const PROVIDER_LABEL = { free: 'The free model', groq: 'Groq' }
+
 // Resolves when the run completes; rejects with AbortError on abort.
 export async function runClientAgent({ provider, model, apiKey, messages, redirected = false, signal, onDelta, onTool, onNotice }) {
-  if (provider !== 'groq') return runSimulated({ messages, redirected, signal, onDelta, onTool })
+  if (provider !== 'groq' && provider !== 'free') return runSimulated({ messages, redirected, signal, onDelta, onTool })
 
   let text = ''
-  const firstToken = new AbortController()
-  const deadline = setTimeout(() => firstToken.abort(new Error('groq_first_token_timeout')), FIRST_TOKEN_TIMEOUT_MS)
-  const providerSignal = AbortSignal.any([signal, firstToken.signal])
-  try {
-    for await (const delta of streamGroqViaEdge({ messages, model, apiKey, signal: providerSignal })) {
-      clearTimeout(deadline)
+  for (let attempt = 0; ; attempt++) {
+    const firstToken = new AbortController()
+    const deadline = setTimeout(() => firstToken.abort(new Error('first_token_timeout')), FIRST_TOKEN_TIMEOUT_MS)
+    const providerSignal = AbortSignal.any([signal, firstToken.signal])
+    try {
+      const { url, body } = providerRequest(provider, { messages, model, apiKey })
+      for await (const chunk of streamOpenAICompatible({ url, body, signal: providerSignal })) {
+        clearTimeout(deadline)
+        if (signal.aborted) throw abortError()
+        if (typeof chunk !== 'string') continue
+        text += chunk
+        onDelta(chunk)
+      }
       if (signal.aborted) throw abortError()
-      text += delta
-      onDelta(delta)
+      if (!text) throw new Error('empty_stream')
+      return
+    } catch (err) {
+      if (err?.name === 'AbortError' || signal.aborted) throw err
+      // Free tier cooldown: wait it out visibly, then try again.
+      const cooling = (err.status === 402 || err.status === 429) && err.retryAfter && err.retryAfter <= 45
+      if (!text && cooling && attempt < MAX_COOLDOWN_WAITS) {
+        onNotice?.(`${PROVIDER_LABEL[provider]} is cooling down (free tier: one reply every 30 s) — answering in ${err.retryAfter} s.`)
+        await sleep(err.retryAfter * 1000 + 500, signal)
+        continue
+      }
+      if (!text) {
+        onNotice?.(`${PROVIDER_LABEL[provider]} is unavailable (${String(err.message || err).slice(0, 90)}) — continuing with the scripted demo agent.`)
+        return runSimulated({ messages, redirected, signal, onDelta, onTool })
+      }
+      throw err
+    } finally {
+      clearTimeout(deadline)
     }
-    if (signal.aborted) throw abortError()
-    if (!text) throw new Error('groq_empty_stream')
-  } catch (err) {
-    if (err?.name === 'AbortError' || signal.aborted) throw err
-    if (!text) {
-      onNotice?.(`Groq is unavailable (${String(err.message || err).slice(0, 90)}) — continuing with the built-in simulated agent.`)
-      return runSimulated({ messages, redirected, signal, onDelta, onTool })
-    }
-    throw err
-  } finally {
-    clearTimeout(deadline)
   }
 }

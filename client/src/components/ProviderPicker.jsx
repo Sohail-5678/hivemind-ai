@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 
-const STATIC_PROVIDERS = { simulated: { available: true }, ollama: { available: false, models: [] }, groq: { available: false, byok: true } }
+const STATIC_PROVIDERS = { simulated: { available: true }, free: { available: true }, ollama: { available: false, models: [] }, groq: { available: false, byok: true } }
 
 // Which agent brains are available right now, for the current runtime.
 export function useProviders(runtime) {
@@ -27,7 +27,7 @@ export function ProviderFields({ runtime, providers, provider, setProvider, mode
 
   useEffect(() => {
     // Default to a real local model when one is detected.
-    if (ollamaAvailable && provider === 'simulated' && !model) {
+    if (ollamaAvailable && provider === 'free' && !model) {
       setProvider('ollama')
       setModel(providers.ollama.models.find((m) => m.startsWith('llama')) || providers.ollama.models[0] || '')
     }
@@ -53,7 +53,8 @@ export function ProviderFields({ runtime, providers, provider, setProvider, mode
             }
           }}
         >
-          <option value="simulated">Simulated — instant, no setup</option>
+          <option value="free">Free model — real answers, no key</option>
+          <option value="simulated">Scripted demo — instant, offline</option>
           {serverMode && (
             <option value="ollama" disabled={!ollamaAvailable}>
               {ollamaAvailable ? 'Ollama — local model, private' : 'Ollama — not detected on this machine'}

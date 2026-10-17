@@ -8,7 +8,7 @@ export function LiveSection({ runtime, initialCode = '' }) {
   const providers = useProviders(runtime)
   const [name, setName] = useState(() => localStorage.getItem('hivemind_name') || '')
   const [sessionName, setSessionName] = useState('Team session')
-  const [provider, setProvider] = useState('simulated')
+  const [provider, setProvider] = useState('free')
   const [model, setModel] = useState('')
   const [groqKey, setGroqKey] = useState(readStoredKey)
   const [code, setCode] = useState(initialCode)

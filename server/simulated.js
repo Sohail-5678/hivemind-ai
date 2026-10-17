@@ -70,7 +70,22 @@ const TEMPLATES = [
   }),
 ]
 
-export function simulatedPlan(topic, redirected) {
+const QUESTION = /^\s*(what|who|why|how|when|where|which|is|are|can|does|do|explain|define|tell me)\b|\?\s*$/i
+
+export function simulatedPlan(topic, redirected, rawText = '') {
+  if (QUESTION.test(rawText)) {
+    return {
+      tool: { name: 'analyze_context', args: { query: topic }, result: 'This room is using the scripted demo agent, which has no language model behind it.' },
+      text:
+        (redirected ? 'Changing course — ' : '') +
+        `That's a real question ("${String(rawText).trim().slice(0, 120)}"), and I'm HiveMind's **scripted demo agent**: I replay prepared text so the multiplayer mechanics can be shown with no setup, but I can't actually answer it.\n\n` +
+        `**To get a real answer**, start a new session and pick **Free model** (no key needed) or **Groq** as the agent brain.\n\n` +
+        `**What you can still try here:**\n` +
+        `- Hit **Redirect** while I'm writing and watch me change course mid-sentence.\n` +
+        `- **Pause** me, then **Resume** — I continue where I stopped.\n` +
+        `- **Fork** the session into a parallel room with the full history.`,
+    }
+  }
   // Stable choice per topic so replays feel consistent, but different topics vary.
   let hash = 0
   for (const ch of topic) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0

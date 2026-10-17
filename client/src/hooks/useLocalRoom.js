@@ -299,11 +299,10 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         return
       }
       if (action === 'fork') {
-        const source = sessionRef.current
-        const newSession = createLocalRoom({
-          name: `${source.name} (fork)`, mode: source.mode, provider: source.provider, model: source.model,
-          forkedFrom: source.id, events: eventsRef.current.map((e) => ({ ...e, sessionId: null })),
-        })
+        // The forker already created (and will host) the new room in its own
+        // browser; the original room only records that the fork happened.
+        const newSession = payload?.newSession
+        if (!newSession?.roomCode) return
         appendEvent('fork', from, newSession.name, { forkedSessionId: newSession.id })
         emit({ type: 'session_forked', newSession, by: from })
       }
@@ -427,9 +426,11 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         adopted = true
         becomeHost(room)
       } else {
-        dispatch({ type: 'connection', value: 'error', error: relaysRef.current > 0
-          ? 'No live room found for that code. Check the code, and make sure the person who created the room still has it open — the room lives in the creator\u2019s browser.'
-          : 'Couldn\u2019t reach the real-time relays from this network, so only rooms opened in this browser are visible. Try another network (or mobile data) and join again.' })
+        dispatch({ type: 'connection', value: 'error', error: preferHost
+          ? 'That room isn\u2019t saved in this browser any more. Create a new session, or join with the code from a device where it\u2019s open.'
+          : relaysRef.current > 0
+            ? 'No live room found for that code. Check the code, and make sure the person who created the room still has it open — the room lives in the creator\u2019s browser.'
+            : 'Couldn\u2019t reach the real-time relays from this network, so only rooms opened in this browser are visible. Try another network (or mobile data) and join again.' })
       }
     }
     if (preferHost) {
@@ -498,6 +499,18 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
   const dispatchAction = useCallback((action, payload = {}) => {
     const api = hostApiRef.current
     if (!api) throw new Error('Not connected to the room yet.')
+    let forked = null
+    if (action === 'fork') {
+      // Create the fork HERE, from this tab's mirrored timeline, so it exists
+      // (and is hosted) in the forker's own browser — not the original host's.
+      const source = sessionRef.current
+      if (!source) throw new Error('Not connected to the room yet.')
+      forked = createLocalRoom({
+        name: `${source.name} (fork)`, mode: source.mode, provider: source.provider, model: source.model,
+        forkedFrom: source.id, events: eventsRef.current.map((e) => ({ ...e, sessionId: null })),
+      })
+      payload = { newSession: forked }
+    }
     if (hostRef.current) {
       api.hostHandle(action, payload, you)
     } else {
@@ -505,6 +518,8 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
       const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
       pendingRef.current.push({ id, action, payload, at: Date.now() })
       api.post({ t: 'action', id, action, payload, from: you })
+      // Hop into our own fork now; don't wait for the host's echo.
+      if (forked) dispatch({ type: 'session_forked', newSession: forked, by: you })
     }
     return { ok: true }
   }, [you])

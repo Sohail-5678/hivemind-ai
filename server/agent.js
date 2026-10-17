@@ -136,6 +136,47 @@ async function* streamGroq({ messages, model, signal, apiKey }) {
   }
 }
 
+const FREE_MODEL_URL = process.env.FREE_MODEL_URL || 'https://text.pollinations.ai/openai'
+
+async function* streamFree({ messages, signal }) {
+  const res = await fetch(FREE_MODEL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'openai', messages, stream: true }),
+    signal,
+  })
+  if (!res.ok) {
+    let data = null
+    try { data = await res.json() } catch { /* non-JSON */ }
+    const msg = data?.error?.message || data?.error || ''
+    const err = new Error(`free_http_${res.status}`)
+    err.status = res.status
+    err.retryAfter = Number(res.headers.get('retry-after')) || Number(String(msg).match(/Retry after (\d+)s/)?.[1]) || null
+    throw err
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let carry = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    carry += decoder.decode(value, { stream: true })
+    const lines = carry.split('\n')
+    carry = lines.pop()
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const data = trimmed.slice(5).trim()
+      if (data === '[DONE]') return
+      let json
+      try { json = JSON.parse(data) } catch { continue }
+      const delta = json.choices?.[0]?.delta?.content
+      // Reasoning chunks carry no text but prove the stream is alive.
+      yield delta || ''
+    }
+  }
+}
+
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) return reject(abortError())
   const t = setTimeout(resolve, ms)
@@ -252,28 +293,38 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
   // First-token deadline: a provider that hangs (rather than refuses) must
   // still trigger the fallback. Abort with a plain Error so the catch below
   // treats it as a provider failure, not a user abort.
+  for (let attempt = 0; ; attempt++) {
   const firstToken = new AbortController()
   const deadline = setTimeout(() => firstToken.abort(new Error('provider_first_token_timeout')), FIRST_TOKEN_TIMEOUT_MS)
   const providerSignal = AbortSignal.any([signal, firstToken.signal])
   try {
     const stream = provider === 'ollama'
       ? streamOllama({ messages, model: session.model, signal: providerSignal })
-      : streamGroq({ messages, model: session.model, signal: providerSignal, apiKey: sessionKeys.get(session.id) || process.env.GROQ_API_KEY })
+      : provider === 'free'
+        ? streamFree({ messages, signal: providerSignal })
+        : streamGroq({ messages, model: session.model, signal: providerSignal, apiKey: sessionKeys.get(session.id) || process.env.GROQ_API_KEY })
     for await (const delta of stream) {
       clearTimeout(deadline)
       if (signal.aborted) throw abortError()
-      onDelta(delta)
+      if (delta) onDelta(delta)
     }
     if (signal.aborted) throw abortError()
     // A 200 response with no usable text is a provider failure, not a completed run.
     if (!run.text) throw new Error(`${provider}_empty_stream`)
+    return
   } catch (err) {
     if (err?.name === 'AbortError' || signal.aborted) throw err
+    const cooling = (err.status === 402 || err.status === 429) && err.retryAfter && err.retryAfter <= 45
+    if (!run.text && cooling && attempt < 2) {
+      broadcast(session.id, { type: 'agent_notice', sessionId: session.id, notice: `The free model is cooling down (one reply every 30 s) — answering in ${err.retryAfter} s.` })
+      await sleep(err.retryAfter * 1000 + 500, signal)
+      continue
+    }
     if (!run.text) {
       broadcast(session.id, {
         type: 'agent_notice',
         sessionId: session.id,
-        notice: `${provider === 'ollama' ? 'Ollama' : 'Groq'} is unavailable (${String(err.message || err).slice(0, 80)}) — continuing with the built-in simulated agent.`,
+        notice: `${provider === 'ollama' ? 'Ollama' : provider === 'free' ? 'The free model' : 'Groq'} is unavailable (${String(err.message || err).slice(0, 80)}) — continuing with the scripted demo agent.`,
       })
       return runSimulated(session, run, messages, { onDelta, redirected })
     }
@@ -281,12 +332,13 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
   } finally {
     clearTimeout(deadline)
   }
+  }
 }
 
 async function runSimulated(session, run, messages, { onDelta, redirected }) {
   const { signal } = run.controller
   const topic = topicOf(lastUserText(messages))
-  const plan = simulatedPlan(topic, redirected)
+  const plan = simulatedPlan(topic, redirected, lastUserText(messages))
 
   await sleep(500, signal)
   const callEvent = addEvent(session.id, { type: 'tool_call', author: AGENT_AUTHOR, content: plan.tool.args.query, meta: { tool: plan.tool.name, phase: 'call', runId: run.id } })
