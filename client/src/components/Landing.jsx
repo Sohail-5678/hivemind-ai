@@ -124,7 +124,7 @@ export function Landing({ onSelect, runtime }) {
       <div className="stats-row">
         <div className="stat"><div className="k">~90 ms</div><div className="v">token fan-out to every teammate</div></div>
         <div className="stat"><div className="k">5 moves</div><div className="v">message · redirect · pause/resume · stop · fork</div></div>
-        <div className="stat"><div className="k">3 brains</div><div className="v">simulated · Ollama (local) · Groq (BYOK)</div></div>
+        <div className="stat"><div className="k">4 brains</div><div className="v">free model · Groq · Ollama · scripted demo</div></div>
         <div className="stat"><div className="k">$0</div><div className="v">no accounts, no keys required to run</div></div>
       </div>
 

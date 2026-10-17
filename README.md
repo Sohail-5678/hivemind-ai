@@ -60,7 +60,8 @@ The terminal prints a **Network URL** — anyone on your WiFi can open it and jo
 
 | Provider | Setup | Notes |
 |---|---|---|
-| **Simulated** | none | Built-in. Streams believable output with tool-call theater. Powers the instant demo. |
+| **Free model** (default) | none | A free, no-key hosted model with real answers. Its free tier allows one reply every 30 s per host; the room waits out the cooldown with a visible notice. |
+| **Scripted demo** | none | Built-in. Streams believable output with tool-call theater. Powers the instant demo. |
 | **Ollama** | [ollama.com](https://ollama.com), any model | Auto-detected at `localhost:11434`. Fully local and private. |
 | **Groq** | free key at [console.groq.com](https://console.groq.com) | Entered in the UI, held in memory only (server) or forwarded once by an edge function (static). Never persisted, never logged. |
 
