@@ -5,6 +5,8 @@
 import { simulatedPlan, topicOf, lastUserText } from '@shared/simulated.js'
 
 const FIRST_TOKEN_TIMEOUT_MS = 15_000
+const FREE_FIRST_TOKEN_TIMEOUT_MS = 45_000 // the free tier queues up to ~30 s before streaming
+const QUEUED_NOTICE_MS = 4_000
 
 // AbortSignal.any is missing on older Safari (< 17.4) — combine signals by hand there.
 function anySignal(signals) {
@@ -57,9 +59,9 @@ export function buildMessages({ sessionName, participantNames, events, steering 
   return messages
 }
 
-async function runSimulated({ messages, redirected, signal, onDelta, onTool }) {
+async function runSimulated({ messages, redirected, signal, onDelta, onTool, fallback = false }) {
   const topic = topicOf(lastUserText(messages))
-  const plan = simulatedPlan(topic, redirected, lastUserText(messages))
+  const plan = simulatedPlan(topic, redirected, lastUserText(messages), { fallback })
   await sleep(500, signal)
   onTool('call', { tool: plan.tool.name, content: plan.tool.args.query })
   await sleep(1100, signal)
@@ -142,14 +144,22 @@ export async function runClientAgent({ provider, model, apiKey, messages, redire
   if (provider !== 'groq' && provider !== 'free') return runSimulated({ messages, redirected, signal, onDelta, onTool })
 
   let text = ''
+  // The free tier queues a request that exceeds "one reply every 30 s" rather
+  // than rejecting it, so give it longer than the queue and say what's happening.
+  const firstTokenMs = provider === 'free' ? FREE_FIRST_TOKEN_TIMEOUT_MS : FIRST_TOKEN_TIMEOUT_MS
   for (let attempt = 0; ; attempt++) {
     const firstToken = new AbortController()
-    const deadline = setTimeout(() => firstToken.abort(new Error('first_token_timeout')), FIRST_TOKEN_TIMEOUT_MS)
+    const deadline = setTimeout(() => firstToken.abort(new Error('first_token_timeout')), firstTokenMs)
+    let started = false
+    const queuedNotice = provider === 'free' ? setTimeout(() => {
+      if (!started && !signal.aborted) onNotice?.('Queued — the free model allows one reply every 30 s. This answer will start shortly.')
+    }, QUEUED_NOTICE_MS) : null
     const providerSignal = anySignal([signal, firstToken.signal])
     try {
       const { url, body } = providerRequest(provider, { messages, model, apiKey })
       for await (const chunk of streamOpenAICompatible({ url, body, signal: providerSignal })) {
         clearTimeout(deadline)
+        started = true
         if (signal.aborted) throw abortError()
         if (typeof chunk !== 'string') continue
         text += chunk
@@ -169,11 +179,12 @@ export async function runClientAgent({ provider, model, apiKey, messages, redire
       }
       if (!text) {
         onNotice?.(`${PROVIDER_LABEL[provider]} is unavailable (${String(err.message || err).slice(0, 90)}) — continuing with the scripted demo agent.`)
-        return runSimulated({ messages, redirected, signal, onDelta, onTool })
+        return runSimulated({ messages, redirected, signal, onDelta, onTool, fallback: true })
       }
       throw err
     } finally {
       clearTimeout(deadline)
+      if (queuedNotice) clearTimeout(queuedNotice)
     }
   }
 }
