@@ -72,7 +72,15 @@ const TEMPLATES = [
 
 const QUESTION = /^\s*(what|who|why|how|when|where|which|is|are|can|does|do|explain|define|tell me)\b|\?\s*$/i
 
-export function simulatedPlan(topic, redirected, rawText = '') {
+export function simulatedPlan(topic, redirected, rawText = '', { fallback = false } = {}) {
+  if (fallback) {
+    return {
+      tool: { name: 'analyze_context', args: { query: topic }, result: 'The language model did not respond in time; the scripted demo agent is standing in.' },
+      text:
+        `The language model behind this room didn't respond in time, so I'm the **scripted demo agent** standing in — I can't give a real answer to "${String(rawText).trim().slice(0, 120)}".\n\n` +
+        `**Send it again in a few seconds** and the model will pick it up. Everything else in the room — redirect, pause, resume, fork — keeps working while you wait.`,
+    }
+  }
   if (QUESTION.test(rawText)) {
     return {
       tool: { name: 'analyze_context', args: { query: topic }, result: 'This room is using the scripted demo agent, which has no language model behind it.' },

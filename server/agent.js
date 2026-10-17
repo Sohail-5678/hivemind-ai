@@ -11,6 +11,7 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2'
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant'
 const RUN_TIMEOUT_MS = 120_000
 const FIRST_TOKEN_TIMEOUT_MS = 12_000
+const FREE_FIRST_TOKEN_TIMEOUT_MS = 45_000 // the free tier queues up to ~30 s before streaming
 const MAX_CONTEXT_EVENTS = 30
 const MAX_CONCURRENT_RUNS = 4
 const FLUSH_MS = 90
@@ -311,7 +312,11 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
   // treats it as a provider failure, not a user abort.
   for (let attempt = 0; ; attempt++) {
   const firstToken = new AbortController()
-  const deadline = setTimeout(() => firstToken.abort(new Error('provider_first_token_timeout')), FIRST_TOKEN_TIMEOUT_MS)
+  const deadline = setTimeout(() => firstToken.abort(new Error('provider_first_token_timeout')), provider === 'free' ? FREE_FIRST_TOKEN_TIMEOUT_MS : FIRST_TOKEN_TIMEOUT_MS)
+  let started = false
+  const queuedNotice = provider === 'free' ? setTimeout(() => {
+    if (!started && !signal.aborted) broadcast(session.id, { type: 'agent_notice', sessionId: session.id, notice: 'Queued — the free model allows one reply every 30 s. This answer will start shortly.' })
+  }, 4000) : null
   const providerSignal = anySignal([signal, firstToken.signal])
   try {
     const stream = provider === 'ollama'
@@ -321,6 +326,7 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
         : streamGroq({ messages, model: session.model, signal: providerSignal, apiKey: sessionKeys.get(session.id) || process.env.GROQ_API_KEY })
     for await (const delta of stream) {
       clearTimeout(deadline)
+      started = true
       if (signal.aborted) throw abortError()
       if (delta) onDelta(delta)
     }
@@ -342,19 +348,20 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
         sessionId: session.id,
         notice: `${provider === 'ollama' ? 'Ollama' : provider === 'free' ? 'The free model' : 'Groq'} is unavailable (${String(err.message || err).slice(0, 80)}) — continuing with the scripted demo agent.`,
       })
-      return runSimulated(session, run, messages, { onDelta, redirected })
+      return runSimulated(session, run, messages, { onDelta, redirected, fallback: true })
     }
     throw err
   } finally {
     clearTimeout(deadline)
+    if (queuedNotice) clearTimeout(queuedNotice)
   }
   }
 }
 
-async function runSimulated(session, run, messages, { onDelta, redirected }) {
+async function runSimulated(session, run, messages, { onDelta, redirected, fallback = false }) {
   const { signal } = run.controller
   const topic = topicOf(lastUserText(messages))
-  const plan = simulatedPlan(topic, redirected, lastUserText(messages))
+  const plan = simulatedPlan(topic, redirected, lastUserText(messages), { fallback })
 
   await sleep(500, signal)
   const callEvent = addEvent(session.id, { type: 'tool_call', author: AGENT_AUTHOR, content: plan.tool.args.query, meta: { tool: plan.tool.name, phase: 'call', runId: run.id } })
