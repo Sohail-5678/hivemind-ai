@@ -2,7 +2,7 @@ import React from 'react'
 
 const FLOW = [
   { n: 1, title: 'A teammate sends a task', body: 'Anyone in the room types a message. It is validated (length caps, control characters stripped, prompt-injection patterns flagged) and appended to the session timeline as an event.' },
-  { n: 2, title: 'The room fans it out', body: 'The event is broadcast to every participant in real time — over WebSockets on the Node server, or over BroadcastChannel between browser tabs on the static build.' },
+  { n: 2, title: 'The room fans it out', body: 'The event is broadcast to every participant in real time — over WebSockets on the Node server, or through an end-to-end encrypted relay on the static build, so any device on any network can join.' },
   { n: 3, title: 'The agent run starts', body: 'One run per session at a time. The engine builds the LLM context from the last 30 timeline events (every teammate’s messages, the agent’s replies, and every redirect), then starts streaming.' },
   { n: 4, title: 'Tokens stream to everyone', body: 'Deltas are batched (~90 ms) and broadcast, so all teammates watch the same text appear at the same moment. Late joiners get a snapshot that includes the text streamed so far.' },
   { n: 5, title: 'Anyone can steer', body: 'Redirect aborts the in-flight stream, commits the partial output (tagged “interrupted”), and immediately starts a follow-up run with the new direction injected. Pause, resume, stop, and fork work the same way for the whole room.' },
@@ -28,7 +28,7 @@ const GUARDRAILS = [
   ['Split-brain protection', 'In the tab-based runtime the lowest-id tab hosts; a tab that wrongly believes it hosts demotes itself and re-syncs, and un-acked actions are replayed on takeover.'],
 ]
 
-const STACK = ['React 18', 'Vite', 'Node 22', 'Express', 'ws (WebSockets)', 'node:sqlite', 'BroadcastChannel', 'Vercel Edge Functions', 'Groq API', 'Ollama', 'Server-sent streaming', 'Zero native dependencies']
+const STACK = ['React 18', 'Vite', 'Node 22', 'Express', 'ws (WebSockets)', 'node:sqlite', 'MQTT over WebSockets', 'Web Crypto (AES-GCM)', 'BroadcastChannel', 'Vercel Edge Functions', 'Groq API', 'Ollama', 'Server-sent streaming', 'Zero native dependencies']
 
 export function AboutSection({ onSelect, runtime }) {
   return (
@@ -94,7 +94,7 @@ export function AboutSection({ onSelect, runtime }) {
               <div className="arch-sub">Demo (scripted replay) · Sample (solo) · Live (rooms) → one shared SessionWorkspace</div>
             </div>
           </div>
-          <div className="arch-arrows"><span>WebSocket</span><span>BroadcastChannel</span></div>
+          <div className="arch-arrows"><span>WebSocket</span><span>Encrypted relay</span></div>
           <div className="arch-row two">
             <div className="arch-box">
               <div className="arch-title">Server runtime — Node, one process</div>
@@ -102,7 +102,7 @@ export function AboutSection({ onSelect, runtime }) {
             </div>
             <div className="arch-box">
               <div className="arch-title">Static runtime — Vercel</div>
-              <div className="arch-sub">Same bundle, no backend. Rooms sync across tabs; the agent runs in the host tab; a lowest-id tab takes over if the host closes. Groq via an edge function.</div>
+              <div className="arch-sub">Same bundle, no backend of its own. Frames are AES-GCM encrypted with a key derived from the room code and fanned out through redundant public relays; the agent runs in the creator’s tab and the lowest-id participant takes over if it closes. Groq via an edge function.</div>
             </div>
           </div>
           <div className="arch-arrows"><span>Ollama · Groq · simulated</span><span>Groq (edge proxy) · simulated</span></div>
@@ -115,9 +115,9 @@ export function AboutSection({ onSelect, runtime }) {
         <table className="about-table">
           <thead><tr><th></th><th>Server runtime</th><th>Static runtime</th></tr></thead>
           <tbody>
-            <tr><td>Transport</td><td>WebSocket rooms</td><td>BroadcastChannel across tabs</td></tr>
+            <tr><td>Transport</td><td>WebSocket rooms</td><td>Encrypted relay (MQTT over WSS) + BroadcastChannel</td></tr>
             <tr><td>Timeline storage</td><td>SQLite (Node’s built-in)</td><td>localStorage per room</td></tr>
-            <tr><td>Multiplayer reach</td><td>Any device that can reach the server</td><td>Tabs in one browser</td></tr>
+            <tr><td>Multiplayer reach</td><td>Any device that can reach the server</td><td>Any device, any network</td></tr>
             <tr><td>Where the agent runs</td><td>The server process</td><td>The host tab</td></tr>
             <tr><td>Agent brains</td><td>Simulated · Ollama · Groq</td><td>Simulated · Groq</td></tr>
           </tbody>

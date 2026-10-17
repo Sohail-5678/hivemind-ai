@@ -2,7 +2,7 @@
 //   server  — the Node server is present (local `npm start`): real WebSocket rooms,
 //             cross-device multiplayer, Ollama / Groq / simulated agents.
 //   static  — a static deployment (Vercel): the same UI, with multiplayer across
-//             browser tabs via BroadcastChannel and agents running in the host tab
+//             devices via an encrypted relay and agents running in the host tab
 //             (simulated, or Groq through the /api/chat edge function).
 import { useEffect, useState } from 'react'
 

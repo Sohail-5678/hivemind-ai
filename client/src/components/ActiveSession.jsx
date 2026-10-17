@@ -4,7 +4,7 @@ import { useLocalRoom } from '../hooks/useLocalRoom'
 import { SessionWorkspace } from './SessionWorkspace'
 
 // Live-connected workspace shared by Sample and Live modes. Picks the transport
-// from the runtime (server → WebSocket, static → BroadcastChannel) and handles
+// from the runtime (server → WebSocket, static → encrypted relay) and handles
 // the "you forked → hop into the fork" navigation plus connection errors.
 
 function Connected({ s, renderShareBar, banner, onExit }) {

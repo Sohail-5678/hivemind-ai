@@ -1,4 +1,5 @@
-// Static mode: multiplayer rooms over BroadcastChannel (tabs in one browser),
+// Static mode: multiplayer rooms over an encrypted multi-relay transport
+// (lib/relay.js: any device, any network; BroadcastChannel for same-browser tabs),
 // with the agent engine running in the host tab. Emits the SAME message shapes
 // as the Node server so the UI, reducer, and workspace are shared verbatim.
 //
@@ -8,13 +9,16 @@
 import { useEffect, useReducer, useRef, useCallback, useMemo } from 'react'
 import { sessionReducer, initialSessionState } from './sessionReducer'
 import { runClientAgent, buildMessages } from '../agent/clientAgent'
+import { openRoomChannel } from '../lib/relay'
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const PALETTE = ['#4F8FE8', '#E85D55', '#9DB8FF', '#DE1110', '#7B61FF', '#2BB3A3', '#F0A23B', '#C56BD6']
 const AGENT = { id: 'agent', name: 'HiveMind', color: '#255DCE' }
 const HEARTBEAT_MS = 2000
 const PEER_TTL_MS = 7000
-const SNAPSHOT_WAIT_MS = 900
+const SNAPSHOT_WAIT_MS = 5000      // joiner waits this long (after a relay connects) for a live host
+const HELLO_RETRY_MS = 1500
+const SNAPSHOT_MAX_EVENTS = 120    // keeps snapshot frames well under public-relay size limits
 const FLUSH_MS = 60
 const MAX_MESSAGE_CHARS = 4000
 const MAX_REDIRECT_CHARS = 500
@@ -97,6 +101,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
   const hostSeenRef = useRef(false)
   const hostApiRef = useRef(null)
   const pendingRef = useRef([]) // non-host actions awaiting a host ack
+  const relaysRef = useRef(0)   // relays currently connected (for error copy)
   const apiKeyRef = useRef(apiKey)
   apiKeyRef.current = apiKey
 
@@ -115,7 +120,11 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
     if (!roomCode || !userName) return undefined
     const code = String(roomCode).toUpperCase()
     const guard = { closed: false, timers: [] }
-    const chan = new BroadcastChannel(`hivemind:${code}`)
+    let onFrame = () => {}
+    const chan = openRoomChannel(code, {
+      onMessage: (data) => onFrame({ data }),
+      onStatus: ({ relays }) => { relaysRef.current = relays },
+    })
     chanRef.current = chan
     hostRef.current = false
     hostSeenRef.current = false
@@ -125,7 +134,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
     let snapshotTimer = null
     let adopted = false
 
-    const post = (payload) => { if (!guard.closed) { try { chan.postMessage(payload) } catch { /* closed */ } } }
+    const post = (payload) => { if (!guard.closed) chan.post(payload) }
     const participants = () => [
       { ...you, typing: typingRef.current },
       ...[...peersRef.current.values()].map((p) => ({ ...p.user, typing: p.typing })),
@@ -329,24 +338,25 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
       emit({ type: 'agent_done', runId: 'lost', event: null, partial: true })
     }
 
-    chan.onmessage = ({ data }) => {
+    onFrame = ({ data }) => {
       if (guard.closed || !data || typeof data.t !== 'string') return
       const { t } = data
 
       if (t === 'hello') {
         const user = data.user
         if (!user?.id || user.id === you.id) return
+        const known = peersRef.current.has(user.id)
         peersRef.current.set(user.id, { user, lastSeen: Date.now(), typing: false, host: false })
         post({ t: 'heartbeat', user: you, typing: typingRef.current, host: hostRef.current })
         if (hostRef.current && sessionRef.current) {
           const run = runRef.current
           post({
-            t: 'snapshot', to: user.id, session: sessionRef.current, events: eventsRef.current,
+            t: 'snapshot', to: user.id, session: sessionRef.current, events: eventsRef.current.slice(-SNAPSHOT_MAX_EVENTS),
             participants: participants(), agentStatus: run ? 'running' : statusRef.current,
             // Exclude text still sitting in run.pending — it arrives via the next agent_token flush.
             streaming: run ? { runId: run.id, text: run.text.slice(0, run.text.length - run.pending.length) } : null,
           })
-          appendEvent('join', user)
+          if (!known) appendEvent('join', user) // hello is retried; log the join once
         }
         pushPresence()
         return
@@ -406,9 +416,10 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
       }
     }
 
-    // Join: announce, wait briefly for a live host, else host from local storage.
+    // Join: the creator hosts straight from local storage. A joiner waits for a
+    // relay, announces itself (retrying, since frames can race the subscription),
+    // and adopts the host's snapshot; with no live host it falls back to storage.
     dispatch({ type: 'connection', value: 'connecting' })
-    post({ t: 'hello', user: you })
     const fallbackToStorage = () => {
       if (guard.closed || adopted) return
       const room = loadRoom(code)
@@ -416,11 +427,25 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
         adopted = true
         becomeHost(room)
       } else {
-        dispatch({ type: 'connection', value: 'error', error: 'No session found for that code in this browser. Codes are shared between tabs of the same browser in the static build — run the full server for cross-device rooms.' })
+        dispatch({ type: 'connection', value: 'error', error: relaysRef.current > 0
+          ? 'No live room found for that code. Check the code, and make sure the person who created the room still has it open — the room lives in the creator\u2019s browser.'
+          : 'Couldn\u2019t reach the real-time relays from this network, so only rooms opened in this browser are visible. Try another network (or mobile data) and join again.' })
       }
     }
-    if (preferHost) fallbackToStorage()
-    else snapshotTimer = setTimeout(fallbackToStorage, SNAPSHOT_WAIT_MS)
+    if (preferHost) {
+      fallbackToStorage()
+    } else {
+      chan.ready.then(() => {
+        if (guard.closed || adopted) return
+        post({ t: 'hello', user: you })
+        const retry = setInterval(() => {
+          if (guard.closed || adopted) { clearInterval(retry); return }
+          post({ t: 'hello', user: you })
+        }, HELLO_RETRY_MS)
+        guard.timers.push(retry)
+        snapshotTimer = setTimeout(() => { clearInterval(retry); fallbackToStorage() }, SNAPSHOT_WAIT_MS)
+      })
+    }
 
     const heartbeat = setInterval(() => {
       post({ t: 'heartbeat', user: you, typing: typingRef.current, host: hostRef.current })
@@ -448,7 +473,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
     // Expose host actions to the public API via a ref.
     hostApiRef.current = { hostHandle, post, abortRun }
 
-    const onUnload = () => post({ t: 'bye', user: you })
+    const onUnload = () => chan.postNow({ t: 'bye', user: you })
     window.addEventListener('beforeunload', onUnload)
     // A tab coming back from the background re-announces immediately so peers
     // don't mistake a throttled heartbeat for a dead host.
@@ -458,12 +483,13 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
     return () => {
       guard.closed = true
       clearInterval(heartbeat)
+      for (const t of guard.timers) clearInterval(t)
       if (snapshotTimer) clearTimeout(snapshotTimer)
       window.removeEventListener('beforeunload', onUnload)
       document.removeEventListener('visibilitychange', onVisible)
       if (runRef.current) { try { runRef.current.controller.abort() } catch { /* fine */ } }
-      try { chan.postMessage({ t: 'bye', user: you }) } catch { /* fine */ }
-      try { chan.close() } catch { /* fine */ }
+      chan.post({ t: 'bye', user: you })
+      chan.close()
       chanRef.current = null
       hostApiRef.current = null
     }
