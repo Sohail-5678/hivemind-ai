@@ -538,3 +538,5 @@ input, select, textarea { font-family: inherit; font-size: 14px; color: var(--in
 .relay-chip.ok .dot { background: #5BD6A5; box-shadow: 0 0 8px #5BD6A5; }
 .relay-chip.down { color: #FFD2CF; background: var(--red-glass); border-color: var(--red-border); }
 .relay-chip.down .dot { background: var(--red-light); }
+
+.about-credit { text-align: center; color: var(--muted); font-size: 13px; margin-top: 4px; }

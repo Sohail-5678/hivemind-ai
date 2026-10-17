@@ -133,7 +133,6 @@ export function Landing({ onSelect, runtime }) {
           ? 'Running on the full Node server — WebSocket rooms, SQLite timeline, cross-device multiplayer.'
           : 'Static deployment — rooms sync across devices through an end-to-end encrypted relay; run the Node server for local models and a persistent room log.'}
         {' · '}<button className="text-link inline" onClick={() => onSelect('about')}>About this project</button>
-        {' · '}<a href="https://github.com/Sohail-5678/hivemind-ai" target="_blank" rel="noreferrer">Source on GitHub</a>
       </div>
     </div>
   )
