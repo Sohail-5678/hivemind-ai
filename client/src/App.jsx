@@ -69,7 +69,7 @@ export default function App() {
           </nav>
           <div className="topbar-right">
             <span>One agent. Whole team. Live.</span>
-            {runtime && <span className="mode-pill">{runtime.mode === 'server' ? 'Server · WS' : 'Static · Tabs'}</span>}
+            {runtime && <span className="mode-pill">{runtime.mode === 'server' ? 'Server · WS' : 'Static · Relay'}</span>}
           </div>
         </header>
 

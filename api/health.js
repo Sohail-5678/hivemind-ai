@@ -3,7 +3,7 @@
 export const config = { runtime: 'edge' }
 
 export default function handler() {
-  return new Response(JSON.stringify({ ok: true, realtime: 'tabs', platform: 'vercel-edge' }), {
+  return new Response(JSON.stringify({ ok: true, realtime: 'relay', platform: 'vercel-edge' }), {
     status: 200,
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   })

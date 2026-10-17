@@ -1,4 +1,4 @@
-// One reducer for both transports (WebSocket server mode and BroadcastChannel
+// One reducer for both transports (WebSocket server mode and the encrypted relay
 // static mode) — they emit the same message shapes, so the UI can't drift.
 
 export const initialSessionState = {

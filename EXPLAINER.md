@@ -71,9 +71,9 @@ The same React client runs in two very different environments:
 
 | | **Server runtime** (`npm start`) | **Static runtime** (what Vercel serves) |
 |---|---|---|
-| Real-time transport | WebSocket rooms on a Node server | `BroadcastChannel` between tabs in one browser |
+| Real-time transport | WebSocket rooms on a Node server | End-to-end encrypted relay (MQTT over WSS, three public brokers) + `BroadcastChannel` |
 | Diary storage | SQLite (Node's built-in, no native deps) | `localStorage` per room |
-| Who can join | Any device that can reach the server (LAN, tunnel) | Other tabs in the same browser |
+| Who can join | Any device that can reach the server (LAN, tunnel) | Any device on any network with the invite link |
 | Where the agent runs | The server process | The **host tab** (the creator); if it closes, the tab with the lowest id takes over |
 | Brains | Simulated · Ollama · Groq | Simulated · Groq (via a Vercel edge function) |
 
@@ -137,7 +137,7 @@ These are the things that make this more than a chat UI. Each one is a story you
 
 ### 6.5 Multiplayer with no server at all (the static runtime)
 *Problem:* Vercel is static + serverless; no WebSockets, no shared state. How do you demo *real* multiplayer on a free static host?
-*Solution:* `BroadcastChannel` across tabs with a **host model**: the creator hosts and runs the agent; every tab mirrors the full timeline; if the host closes, the lowest-id tab takes over (deterministic election); a tab that wrongly believes it hosts (throttled background tab) **demotes itself** and re-syncs; non-host actions carry ids and are **acked** by the host, buffered while no host is listening, and **replayed on takeover** so nothing is silently lost. Tab identity is per page-load (not `sessionStorage`, which browsers clone on "Duplicate tab" — that would create two hosts).
+*Solution:* an **end-to-end encrypted relay**: every participant connects to three free public MQTT-over-WebSocket brokers at once, publishes each frame to all of them and de-duplicates on receipt, so two devices meet as long as any broker is reachable from both. Frames are AES-GCM encrypted with a key derived from the room code (PBKDF2, 100k rounds), and the topic name comes from the same derivation, so broker operators see neither the code nor the content. On top of that transport sits a **host model**: the creator hosts and runs the agent; every tab mirrors the full timeline; if the host closes, the lowest-id tab takes over (deterministic election); a tab that wrongly believes it hosts (throttled background tab) **demotes itself** and re-syncs; non-host actions carry ids and are **acked** by the host, buffered while no host is listening, and **replayed on takeover** so nothing is silently lost. Tab identity is per page-load (not `sessionStorage`, which browsers clone on "Duplicate tab" — that would create two hosts).
 
 ### 6.6 Background-tab timer throttling
 *Problem:* The host tab is usually hidden while the user watches the joiner tab, and browsers clamp timers in hidden tabs to ~1/s. A word-by-word stream with one timer per word would crawl at one word per second.
@@ -172,18 +172,18 @@ Per-IP rate limits on REST **and** per-connection frame budgets on WebSockets (o
 - Testing: a 33-check end-to-end suite that boots the real server and drives real WebSocket clients, plus unit checks of the tricky logic.
 
 ### Keywords this project honestly covers (for ATS and recruiters)
-Streaming LLM APIs (Groq, Ollama) · agent run lifecycle · human-in-the-loop · prompt/context construction · tool-call theater (simulated) · WebSockets · real-time collaboration · event sourcing (append-only timeline) · presence · React 18 + hooks + reducers · Node 22 · Express · SQLite · Vercel Edge Functions · BroadcastChannel · leader election · idempotency · rate limiting · prompt-injection mitigation · XSS-safe rendering · end-to-end testing · zero-dependency deployment.
+Streaming LLM APIs (Groq, Ollama) · agent run lifecycle · human-in-the-loop · prompt/context construction · tool-call theater (simulated) · WebSockets · real-time collaboration · event sourcing (append-only timeline) · presence · React 18 + hooks + reducers · Node 22 · Express · SQLite · Vercel Edge Functions · MQTT over WebSockets · Web Crypto (AES-GCM, PBKDF2) · BroadcastChannel · leader election · idempotency · rate limiting · prompt-injection mitigation · XSS-safe rendering · end-to-end testing · zero-dependency deployment.
 
 ### Resume bullets (honest and quantified)
 
 > - Built **HiveMind**, a multiplayer AI-agent platform where a team shares one live agent session: WebSocket rooms with presence, streamed LLM output fanned out to every participant with ~90 ms batching, and human-in-the-loop controls (mid-stream redirect, pause/resume, stop, fork) over an append-only event timeline in SQLite.
 > - Designed a provider-agnostic streaming agent engine (Groq, Ollama, simulated) with first-token deadlines, empty-stream detection, and a fallback chain; an abort-with-reason run lifecycle guarantees partial output is preserved and a session can never get stuck.
-> - Shipped a zero-backend deployment mode on Vercel: BroadcastChannel multiplayer across tabs with deterministic host election, split-brain demotion, snapshot sync for late joiners, and ack/replay for actions sent while no host is listening; Groq via a BYOK edge function.
+> - Shipped a zero-backend deployment mode on Vercel: cross-device multiplayer over an end-to-end encrypted, redundant public-relay transport (AES-GCM, PBKDF2-derived keys and topics), with deterministic host election, split-brain demotion, snapshot sync for late joiners, and ack/replay for actions sent while no host is listening; Groq via a BYOK edge function.
 > - Wrote a 33-check end-to-end suite driving three WebSocket clients through the full multiplayer flow; found and fixed 20+ concurrency and robustness bugs (duplicated stream snapshots, run-slot leaks, oldest-N query, timer throttling in background tabs).
 
 ### LinkedIn / portfolio blurb
 
-> HiveMind — multiplayer AI agents. One shared live agent session a whole team can watch, steer, and hand off. Real-time WebSocket rooms, streaming LLMs (Groq/Ollama), mid-stream redirect, pause/resume, fork; also runs with zero backend via BroadcastChannel. Live demo → hivemind-agents.vercel.app
+> HiveMind — multiplayer AI agents. One shared live agent session a whole team can watch, steer, and hand off. Real-time WebSocket rooms, streaming LLMs (Groq/Ollama), mid-stream redirect, pause/resume, fork; also runs with zero backend through an end-to-end encrypted relay. Live demo → hivemind-agents.vercel.app
 
 ---
 
@@ -202,7 +202,7 @@ Filter to the events the model should see (messages, agent replies, redirects), 
 There's no concurrent editing of the same text — the agent is the only writer of its output, and humans append discrete events. A single ordered log with one writer per room (the server, or the host tab) is simpler and strictly correct. CRDTs would matter if teammates co-edited the agent's artifact, which is a natural next step.
 
 **"How does the static version do multiplayer without a server?"**
-`BroadcastChannel` is a same-origin pub/sub bus between tabs. One tab hosts (runs the agent, owns ordering); every tab mirrors the log; new tabs say hello and get a snapshot; the lowest id takes over if the host disappears; a tab that mistakenly thinks it hosts demotes when it hears a lower-id host; non-host actions are acked and replayed on takeover. It's leader election and at-least-once delivery, in the browser. The limitation — same browser only — is stated on the share bar.
+Every participant connects to three public MQTT brokers over WebSockets and publishes each frame to all of them; receivers de-duplicate by sender and sequence number, which also preserves per-sender order. Frames are AES-GCM encrypted with a key derived from the room code, so the brokers are untrusted pipes. On top of that: one tab hosts (runs the agent, owns ordering); every tab mirrors the log; new tabs say hello and get a snapshot; the lowest id takes over if the host disappears; a tab that mistakenly thinks it hosts demotes when it hears a lower-id host; non-host actions are acked and replayed on takeover. It's leader election and at-least-once delivery over an untrusted relay. The trade-off: the room lives in the creator's browser, so it needs that tab open (or a takeover by another participant).
 
 **"How would you scale the server to thousands of rooms?"**
 Rooms are independent, so shard by room id. Replace in-process broadcast with Redis pub/sub so any node can serve any socket; move the agent runs to workers with a queue; keep the event log in Postgres with the same append-only shape; add presence TTLs in Redis. The protocol doesn't change — that's why the transport abstraction exists.
@@ -217,7 +217,7 @@ A 33-check end-to-end test boots the real server on an in-memory SQLite, creates
 Real tool calling for Groq (web search, code execution) with a human-approval gate for risky tools; auth and workspaces; Redis-backed scaling; a shared *artifact* the agent writes to (a doc), which is where CRDTs come in; evals for agent behaviour under redirects; and cross-device static multiplayer via a tiny relay.
 
 **"What's the weakest part?"**
-Honest answer: tool use is simulated (the real providers do plain streaming chat); there's no auth (by design for a local-first demo); the static runtime is same-browser only; and it's a single process. Each is a deliberate scope cut with a documented path forward.
+Honest answer: tool use is simulated (the real providers do plain streaming chat); there's no auth (by design for a local-first demo); static-runtime rooms live in the creator's browser and ride public relays (encrypted end to end); and it's a single process. Each is a deliberate scope cut with a documented path forward.
 
 ---
 
@@ -225,7 +225,7 @@ Honest answer: tool use is simulated (the real providers do plain streaming chat
 
 1. Open https://hivemind-agents.vercel.app. *"This is HiveMind — multiplayer AI agents. One agent, a whole team, live."*
 2. Click **Demo**. Let it run 20 seconds. *"Three teammates, one agent. Watch Jordan redirect it mid-sentence — it pivots without losing the thread. Sam forks it at the end."*
-3. Click **Live → Create session** (Simulated). Copy the invite link, open it in a **second tab**, join as another name. *"Two tabs, one room, no backend — the deployed site syncs through BroadcastChannel."*
+3. Click **Live → Create session** (Simulated). Copy the invite link and open it **on your phone**, join as another name. *"Laptop and phone, one room, no backend of its own — frames go end-to-end encrypted through redundant public relays."*
 4. In tab two, send *"Draft a launch plan"*. Switch to tab one: the same stream is appearing there. Click **Redirect**, type *"risks only"*. Switch back: the partial is tagged interrupted and the agent has changed course.
 5. *"Locally this runs on a Node server with WebSockets and SQLite, with Ollama for fully private models — `npm install`, `npm start`, done. The protocol is the same in both, which is why one client serves both."*
 
@@ -237,7 +237,7 @@ If you have a Groq key, pick **Groq** in step 3 and the agent is a real LLM.
 
 - Tool calls in the UI are **simulated** (the "web_search" is theater for the demo). Real providers stream plain chat completions.
 - **No authentication** — rooms are protected only by unguessable codes. Fine for a demo, not for production.
-- Static runtime multiplayer is **same-browser only**; cross-device needs the Node server.
+- Static runtime rooms **live in the creator's browser** and travel through free public relays (encrypted end to end); if every participant closes the room, it is gone. The Node server gives a persistent, self-hosted room log.
 - **Single process**, in-memory presence; scaling path described above.
 - Ollama must have a model pulled; the UI hides it otherwise.
 - The exact name `hivemind-ai.vercel.app` belongs to someone else; the project lives at `hivemind-agents.vercel.app`.
@@ -251,7 +251,7 @@ If you have a Groq key, pick **Groq** in step 3 and the agent is a real LLM.
 - **Run** — one execution of the agent, from start to finish/abort. One per room at a time.
 - **Abort reason** — why a run stopped: `pause`, `stop`, `redirect`, `timeout`, `demoted`. Decides what happens next.
 - **Snapshot** — what a joining client receives: the session, the events, who's present, and any in-flight stream text.
-- **Host (static runtime)** — the tab that runs the agent and owns ordering for a BroadcastChannel room.
+- **Host (static runtime)** — the tab that runs the agent and owns ordering for a relay room.
 - **Fan-out** — broadcasting one event/token batch to every participant.
 - **BYOK** — bring your own key; the Groq key is supplied by the user and never stored.
 - **Fallback chain** — provider fails → simulated agent, with a visible notice.

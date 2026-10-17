@@ -40,7 +40,7 @@
 <main>
 
 <h1>HiveMind, in pictures</h1>
-<p class="lead">HiveMind lets a whole team share one live AI-agent session: everyone watches the same stream, and anyone can redirect, pause, resume, stop or fork the agent while it is running. It runs as a Node server with WebSocket rooms and SQLite, or as a zero-backend static site where browser tabs sync through BroadcastChannel.</p>
+<p class="lead">HiveMind lets a whole team share one live AI-agent session: everyone watches the same stream, and anyone can redirect, pause, resume, stop or fork the agent while it is running. It runs as a Node server with WebSocket rooms and SQLite, or as a zero-backend static site where devices sync through an end-to-end encrypted relay.</p>
 
 <!-- 1. Problem → solution -->
 <h2>The real-world problem, and how it's solved</h2>
@@ -205,7 +205,7 @@
   <path class="arrow" d="M182 72 V98" marker-end="url(#m5)"/>
   <text class="lbl" x="190" y="86" dominant-baseline="central">realtime: ws</text>
   <path class="arrow" d="M497 72 V98" marker-end="url(#m5)"/>
-  <text class="lbl" x="505" y="86" dominant-baseline="central">realtime: tabs</text>
+  <text class="lbl" x="505" y="86" dominant-baseline="central">realtime: relay</text>
 
   <rect class="zone" x="40" y="100" width="285" height="306" rx="12"/>
   <text class="t" x="182" y="122" text-anchor="middle" dominant-baseline="central" fill="#444441">Server runtime, npm start</text>
@@ -217,8 +217,8 @@
 
   <rect class="zone" x="355" y="100" width="285" height="306" rx="12"/>
   <text class="t" x="497" y="122" text-anchor="middle" dominant-baseline="central" fill="#444441">Static runtime, Vercel</text>
-  <text class="lbl" x="497" y="139" text-anchor="middle" dominant-baseline="central">BroadcastChannel, same browser</text>
-  <g class="box teal"><rect x="375" y="150" width="245" height="48" rx="8"/><text class="t" x="497" y="167" text-anchor="middle" dominant-baseline="central">BroadcastChannel rooms</text><text class="s" x="497" y="183" text-anchor="middle" dominant-baseline="central">tabs in one browser</text></g>
+  <text class="lbl" x="497" y="139" text-anchor="middle" dominant-baseline="central">Encrypted relay, any device</text>
+  <g class="box teal"><rect x="375" y="150" width="245" height="48" rx="8"/><text class="t" x="497" y="167" text-anchor="middle" dominant-baseline="central">Encrypted relay rooms</text><text class="s" x="497" y="183" text-anchor="middle" dominant-baseline="central">three redundant brokers</text></g>
   <g class="box teal"><rect x="375" y="214" width="245" height="48" rx="8"/><text class="t" x="497" y="231" text-anchor="middle" dominant-baseline="central">Agent runs in the host tab</text><text class="s" x="497" y="247" text-anchor="middle" dominant-baseline="central">lowest-id tab takes over</text></g>
   <g class="box teal"><rect x="375" y="278" width="245" height="48" rx="8"/><text class="t" x="497" y="295" text-anchor="middle" dominant-baseline="central">localStorage timeline</text><text class="s" x="497" y="311" text-anchor="middle" dominant-baseline="central">one record per room</text></g>
   <g class="box coral"><rect x="375" y="342" width="245" height="48" rx="8"/><text class="t" x="497" y="359" text-anchor="middle" dominant-baseline="central">Groq via edge function</text><text class="s" x="497" y="375" text-anchor="middle" dominant-baseline="central">key forwarded once, never stored</text></g>

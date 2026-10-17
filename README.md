@@ -34,9 +34,9 @@ HiveMind makes the **session** the product. Anyone on the team can drop into the
 
 | | **Server mode** (`npm start`) | **Static mode** (Vercel) |
 |---|---|---|
-| Transport | WebSocket rooms on a Node server | `BroadcastChannel` across tabs in one browser |
+| Transport | WebSocket rooms on a Node server | End-to-end encrypted relay (MQTT over WSS, three redundant public brokers) + `BroadcastChannel` |
 | Timeline | SQLite (Node's built-in `node:sqlite`) | `localStorage` per room |
-| Multiplayer | Cross-device (share the LAN URL or a tunnel) | Cross-tab (open the invite link in a second tab) |
+| Multiplayer | Cross-device (share the LAN URL or a tunnel) | Cross-device, any network (share the invite link) |
 | Agent brains | Simulated · **Ollama** (local, auto-detected) · **Groq** (BYOK) | Simulated · **Groq** (BYOK via an edge function) |
 | Agent runs in | The server process | The **host tab**; if it closes, the lowest-id tab takes over |
 
@@ -133,7 +133,7 @@ hivemind-ai/
 ├── api/chat.js        Vercel Edge Function — Groq streaming proxy (BYOK)
 ├── client/            Vite + React — spatial glass UI
 │   └── src/
-│       ├── hooks/     useSession (WS) · useLocalRoom (BroadcastChannel) · shared reducer
+│       ├── hooks/     useSession (WS) · useLocalRoom (encrypted relay) · lib/relay.js · shared reducer
 │       ├── agent/     clientAgent — host-tab agent runner for static mode
 │       ├── components/ Landing · Demo · Sample · Live · SessionWorkspace · …
 │       └── demo/      the choreographed replay script

@@ -104,7 +104,7 @@ export function LiveSection({ runtime, initialCode = '' }) {
               <button className="copy-btn" onClick={() => copyInvite(session)}>{copied ? '✓ Copied' : 'Copy invite link'}</button>
               <span style={{ opacity: 0.8 }}>
                 {isStatic
-                  ? 'Open the link in another tab of this browser — it syncs live. Run the Node server locally for cross-device rooms.'
+                  ? 'Send the link to anyone — phone or laptop, any network. Rooms are end-to-end encrypted and live in your browser, so keep this tab open while others are in.'
                   : 'Same WiFi? They can open this app\'s Network URL and enter the code.'}
               </span>
             </div>
@@ -154,7 +154,7 @@ export function LiveSection({ runtime, initialCode = '' }) {
         <div className="info-note">
           {runtime?.mode === 'server'
             ? 'Tip: open two browser tabs and join the same code to see the multiplayer magic on one machine.'
-            : 'Tip: create a session, then open the invite link in a second tab — both tabs share one live agent.'}
+            : 'Tip: create a session on your laptop, then open the invite link on your phone — both share one live agent.'}
         </div>
       </div>
     </div>
