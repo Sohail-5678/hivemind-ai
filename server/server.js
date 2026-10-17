@@ -79,6 +79,7 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/providers', async (_req, res) => {
   const providers = {
     simulated: { available: true },
+    free: { available: true },
     ollama: { available: false, models: [] },
     groq: { available: Boolean(process.env.GROQ_API_KEY), byok: true },
   }
@@ -104,7 +105,7 @@ app.post('/api/sessions', (req, res) => {
   }
   const name = cleanText(req.body?.name, 80) || 'Untitled Session'
   const mode = ['demo', 'sample', 'live'].includes(req.body?.mode) ? req.body.mode : 'live'
-  const provider = ['simulated', 'ollama', 'groq'].includes(req.body?.provider) ? req.body.provider : 'simulated'
+  const provider = ['simulated', 'free', 'ollama', 'groq'].includes(req.body?.provider) ? req.body.provider : 'simulated'
   const model = cleanText(req.body?.model, 60)
   const session = createSession({ name, mode, provider, model })
   if (provider === 'groq' && typeof req.body?.apiKey === 'string') setSessionKey(session.id, req.body.apiKey)

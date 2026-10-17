@@ -8,7 +8,7 @@ export function SampleSection({ runtime }) {
   const providers = useProviders(runtime)
   const [name, setName] = useState(() => localStorage.getItem('hivemind_name') || '')
   const [sessionName, setSessionName] = useState('My first agent session')
-  const [provider, setProvider] = useState('simulated')
+  const [provider, setProvider] = useState('free')
   const [model, setModel] = useState('')
   const [groqKey, setGroqKey] = useState(readStoredKey)
   const [active, setActive] = useState(null)
