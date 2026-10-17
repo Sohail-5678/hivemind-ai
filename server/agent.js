@@ -315,7 +315,7 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
   const deadline = setTimeout(() => firstToken.abort(new Error('provider_first_token_timeout')), provider === 'free' ? FREE_FIRST_TOKEN_TIMEOUT_MS : FIRST_TOKEN_TIMEOUT_MS)
   let started = false
   const queuedNotice = provider === 'free' ? setTimeout(() => {
-    if (!started && !signal.aborted) broadcast(session.id, { type: 'agent_notice', sessionId: session.id, notice: 'Queued — the free model allows one reply every 30 s. This answer will start shortly.' })
+    if (!started && !signal.aborted) broadcast(session.id, { type: 'agent_notice', sessionId: session.id, notice: 'Queued — the free model allows one reply every 30 s. This answer will start shortly.', progress: true })
   }, 4000) : null
   const providerSignal = anySignal([signal, firstToken.signal])
   try {
@@ -338,7 +338,7 @@ async function executeProvider(session, run, messages, { onDelta, redirected }) 
     if (err?.name === 'AbortError' || signal.aborted) throw err
     const cooling = (err.status === 402 || err.status === 429) && err.retryAfter && err.retryAfter <= 45
     if (!run.text && cooling && attempt < 2) {
-      broadcast(session.id, { type: 'agent_notice', sessionId: session.id, notice: `The free model is cooling down (one reply every 30 s) — answering in ${err.retryAfter} s.` })
+      broadcast(session.id, { type: 'agent_notice', sessionId: session.id, notice: `The free model is cooling down (one reply every 30 s) — answering in ${err.retryAfter} s.`, progress: true })
       await sleep(err.retryAfter * 1000 + 500, signal)
       continue
     }
