@@ -146,20 +146,7 @@ export function AboutSection({ onSelect, runtime }) {
         </p>
       </section>
 
-      <section className="about-section glass">
-        <span className="eyebrow">Run it yourself</span>
-        <h2>Two commands.</h2>
-        <pre className="about-code">{`git clone https://github.com/Sohail-5678/hivemind-ai.git
-cd hivemind-ai
-npm install
-npm start        # → http://localhost:3000  (prints a LAN URL for teammates)
-npm test         # 33-check end-to-end multiplayer suite`}</pre>
-        <p>
-          Source, docs, and the test suite live at{' '}
-          <a href="https://github.com/Sohail-5678/hivemind-ai" target="_blank" rel="noreferrer">github.com/Sohail-5678/hivemind-ai</a>.
-          Built by Ameer Sohail Shaik.
-        </p>
-      </section>
+      <p className="about-credit">Built by Ameer Sohail Shaik.</p>
     </div>
   )
 }
