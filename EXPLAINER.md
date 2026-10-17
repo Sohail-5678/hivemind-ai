@@ -3,6 +3,8 @@
 > Everything about this project in plain English: what it is, how it works, why it was built this way, what was hard, how it maps to AI roles, and exactly how to talk about it in interviews.
 >
 > Live: https://hivemind-agents.vercel.app · Code: https://github.com/Sohail-5678/hivemind-ai
+>
+> Visual companion: **[diagrams.html](./diagrams.html)** — the same story in five diagrams (problem → solution, the message pipeline, mid-stream redirect, provider fallback, the two runtimes) plus the measured numbers. Download it and open in any browser; it is a single self-contained file.
 
 ---
 

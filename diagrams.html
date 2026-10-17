@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HiveMind, in pictures</title>
+<style>
+  body { margin: 0; background: #faf9f5; color: #1f1e1b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.5; }
+  main { max-width: 760px; margin: 0 auto; padding: 44px 16px 72px; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0 0 10px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; font-weight: 600; margin: 44px 0 6px; }
+  p { margin: 0 0 14px; }
+  p.lead { color: #1f1e1b; margin-bottom: 8px; }
+  p.cap { color: #5f5e5a; }
+  .card { background: #fff; border: 1px solid #e5e3db; border-radius: 14px; padding: 16px; }
+  svg { width: 100%; height: auto; display: block; font-family: inherit; }
+  .t { font-size: 14px; font-weight: 500; }
+  .s { font-size: 12px; }
+  .lbl { font-size: 12px; fill: #5f5e5a; }
+  .hdr { font-size: 12px; font-weight: 500; }
+  .box rect { stroke-width: 0.5; }
+  .teal rect { fill: #E1F5EE; stroke: #0F6E56; } .teal .t { fill: #085041; } .teal .s { fill: #0F6E56; }
+  .purple rect { fill: #EEEDFE; stroke: #534AB7; } .purple .t { fill: #3C3489; } .purple .s { fill: #534AB7; }
+  .coral rect { fill: #FAECE7; stroke: #993C1D; } .coral .t { fill: #712B13; } .coral .s { fill: #993C1D; }
+  .gray rect { fill: #F1EFE8; stroke: #5F5E5A; } .gray .t { fill: #444441; } .gray .s { fill: #5F5E5A; }
+  .red rect { fill: #FCEBEB; stroke: #A32D2D; } .red .t { fill: #791F1F; } .red .s { fill: #A32D2D; }
+  .zone { fill: #F7F6F1; stroke: #D9D6CC; stroke-width: 0.5; }
+  .arrow { fill: none; stroke: #888780; stroke-width: 1.5; }
+  .tick { stroke: #C9C7BF; stroke-width: 1; }
+  .dot { fill: #888780; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: #fff; border: 1px solid #e5e3db; border-radius: 14px; padding: 16px; }
+  .stat .n { font-size: 24px; font-weight: 600; line-height: 1.2; }
+  .stat .d { color: #5f5e5a; font-size: 14px; margin-top: 4px; }
+  footer { color: #5f5e5a; font-size: 14px; margin-top: 44px; }
+  footer a { color: #0F6E56; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>HiveMind, in pictures</h1>
+<p class="lead">HiveMind lets a whole team share one live AI-agent session: everyone watches the same stream, and anyone can redirect, pause, resume, stop or fork the agent while it is running. It runs as a Node server with WebSocket rooms and SQLite, or as a zero-backend static site where browser tabs sync through BroadcastChannel.</p>
+
+<!-- 1. Problem → solution -->
+<h2>The real-world problem, and how it's solved</h2>
+<p class="cap">AI agents are still used alone, in a box only one person can see. HiveMind turns the agent session itself into the shared thing.</p>
+<div class="card">
+<svg viewBox="0 0 680 418" role="img" aria-label="Problems on the left, how HiveMind solves each on the right">
+  <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+  <text class="hdr" x="40" y="22" fill="#A32D2D">Problem</text>
+  <text class="hdr" x="370" y="22" fill="#0F6E56">How HiveMind solves it</text>
+
+  <g class="box red"><rect x="40" y="44" width="270" height="56" rx="8"/><text class="t" x="175" y="64" text-anchor="middle" dominant-baseline="central">AI is single-player</text><text class="s" x="175" y="82" text-anchor="middle" dominant-baseline="central">a chat only you can see</text></g>
+  <path class="arrow" d="M312 72 H364" marker-end="url(#m1)"/>
+  <g class="box teal"><rect x="370" y="44" width="270" height="56" rx="8"/><text class="t" x="505" y="64" text-anchor="middle" dominant-baseline="central">One session the whole team joins</text><text class="s" x="505" y="82" text-anchor="middle" dominant-baseline="central">presence, shared timeline</text></g>
+
+  <g class="box red"><rect x="40" y="116" width="270" height="56" rx="8"/><text class="t" x="175" y="136" text-anchor="middle" dominant-baseline="central">Sharing means a transcript</text><text class="s" x="175" y="154" text-anchor="middle" dominant-baseline="central">read-only, after the fact</text></g>
+  <path class="arrow" d="M312 144 H364" marker-end="url(#m1)"/>
+  <g class="box teal"><rect x="370" y="116" width="270" height="56" rx="8"/><text class="t" x="505" y="136" text-anchor="middle" dominant-baseline="central">Every token streams to everyone</text><text class="s" x="505" y="154" text-anchor="middle" dominant-baseline="central">batched every 90 ms</text></g>
+
+  <g class="box red"><rect x="40" y="188" width="270" height="56" rx="8"/><text class="t" x="175" y="208" text-anchor="middle" dominant-baseline="central">No way to steer a running agent</text><text class="s" x="175" y="226" text-anchor="middle" dominant-baseline="central">wait, then start over</text></g>
+  <path class="arrow" d="M312 216 H364" marker-end="url(#m1)"/>
+  <g class="box teal"><rect x="370" y="188" width="270" height="56" rx="8"/><text class="t" x="505" y="208" text-anchor="middle" dominant-baseline="central">Redirect, pause, stop, fork</text><text class="s" x="505" y="226" text-anchor="middle" dominant-baseline="central">mid-run, by anyone</text></g>
+
+  <g class="box red"><rect x="40" y="260" width="270" height="56" rx="8"/><text class="t" x="175" y="280" text-anchor="middle" dominant-baseline="central">Long tasks need hand-offs</text><text class="s" x="175" y="298" text-anchor="middle" dominant-baseline="central">context lives in one head</text></g>
+  <path class="arrow" d="M312 288 H364" marker-end="url(#m1)"/>
+  <g class="box teal"><rect x="370" y="260" width="270" height="56" rx="8"/><text class="t" x="505" y="280" text-anchor="middle" dominant-baseline="central">Append-only event timeline</text><text class="s" x="505" y="298" text-anchor="middle" dominant-baseline="central">join late, pick up, fork</text></g>
+
+  <g class="box red"><rect x="40" y="332" width="270" height="56" rx="8"/><text class="t" x="175" y="352" text-anchor="middle" dominant-baseline="central">Live demos die with the API</text><text class="s" x="175" y="370" text-anchor="middle" dominant-baseline="central">one outage, no demo</text></g>
+  <path class="arrow" d="M312 360 H364" marker-end="url(#m1)"/>
+  <g class="box teal"><rect x="370" y="332" width="270" height="56" rx="8"/><text class="t" x="505" y="352" text-anchor="middle" dominant-baseline="central">Fallback to a built-in agent</text><text class="s" x="505" y="370" text-anchor="middle" dominant-baseline="central">deadlines, empty-stream checks</text></g>
+</svg>
+</div>
+
+<!-- 2. Main flow -->
+<h2>What happens when a teammate sends a message</h2>
+<p class="cap">One message travels through validation, the shared timeline and the room before it ever reaches a model. The agent only starts when the room is idle, and a failing model never stops the flow.</p>
+<div class="card">
+<svg viewBox="0 0 680 896" role="img" aria-label="Flowchart of a message through HiveMind">
+  <defs><marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- legend -->
+  <g class="box gray"><rect x="40" y="15" width="14" height="14" rx="3"/></g><text class="lbl" x="60" y="22" dominant-baseline="central">Teammate</text>
+  <g class="box purple"><rect x="140" y="15" width="14" height="14" rx="3"/></g><text class="lbl" x="160" y="22" dominant-baseline="central">App code</text>
+  <g class="box teal"><rect x="240" y="15" width="14" height="14" rx="3"/></g><text class="lbl" x="260" y="22" dominant-baseline="central">Agent run</text>
+  <g class="box coral"><rect x="345" y="15" width="14" height="14" rx="3"/></g><text class="lbl" x="365" y="22" dominant-baseline="central">External model API</text>
+
+  <g class="box gray"><rect x="40" y="58" width="272" height="52" rx="8"/><text class="t" x="176" y="76" text-anchor="middle" dominant-baseline="central">Teammate sends a message</text><text class="s" x="176" y="93" text-anchor="middle" dominant-baseline="central">any participant, any device</text></g>
+  <path class="arrow" d="M176 110 V140" marker-end="url(#m2)"/>
+
+  <g class="box purple"><rect x="40" y="142" width="272" height="52" rx="8"/><text class="t" x="176" y="160" text-anchor="middle" dominant-baseline="central">Validate the input</text><text class="s" x="176" y="177" text-anchor="middle" dominant-baseline="central">caps, control chars, injection flag</text></g>
+  <path class="arrow" d="M176 194 V224" marker-end="url(#m2)"/>
+
+  <g class="box purple"><rect x="40" y="226" width="272" height="52" rx="8"/><text class="t" x="176" y="244" text-anchor="middle" dominant-baseline="central">Append an event to the timeline</text><text class="s" x="176" y="261" text-anchor="middle" dominant-baseline="central">SQLite or localStorage</text></g>
+  <path class="arrow" d="M176 278 V308" marker-end="url(#m2)"/>
+
+  <g class="box purple"><rect x="40" y="310" width="272" height="52" rx="8"/><text class="t" x="176" y="328" text-anchor="middle" dominant-baseline="central">Broadcast to the room</text><text class="s" x="176" y="345" text-anchor="middle" dominant-baseline="central">everyone sees it instantly</text></g>
+  <path class="arrow" d="M176 362 V392" marker-end="url(#m2)"/>
+
+  <g class="box gray"><rect x="40" y="394" width="272" height="52" rx="8"/><text class="t" x="176" y="412" text-anchor="middle" dominant-baseline="central">Is the room idle?</text><text class="s" x="176" y="429" text-anchor="middle" dominant-baseline="central">no run active, not paused</text></g>
+  <path class="arrow" d="M312 420 H366" marker-end="url(#m2)"/>
+  <text class="lbl" x="340" y="411" text-anchor="middle" dominant-baseline="central">no</text>
+  <g class="box gray"><rect x="368" y="394" width="272" height="52" rx="8"/><text class="t" x="504" y="412" text-anchor="middle" dominant-baseline="central">Message waits in the timeline</text><text class="s" x="504" y="429" text-anchor="middle" dominant-baseline="central">current run keeps going</text></g>
+  <path class="arrow" d="M176 446 V476" marker-end="url(#m2)"/>
+  <text class="lbl" x="186" y="462" dominant-baseline="central">yes</text>
+
+  <g class="box teal"><rect x="40" y="478" width="272" height="52" rx="8"/><text class="t" x="176" y="496" text-anchor="middle" dominant-baseline="central">Start one agent run</text><text class="s" x="176" y="513" text-anchor="middle" dominant-baseline="central">one per room at a time</text></g>
+  <path class="arrow" d="M176 530 V560" marker-end="url(#m2)"/>
+
+  <g class="box teal"><rect x="40" y="562" width="272" height="52" rx="8"/><text class="t" x="176" y="580" text-anchor="middle" dominant-baseline="central">Build context from the log</text><text class="s" x="176" y="597" text-anchor="middle" dominant-baseline="central">last 30 events, named speakers</text></g>
+  <path class="arrow" d="M176 614 V644" marker-end="url(#m2)"/>
+  <text class="lbl" x="186" y="630" dominant-baseline="central">real brain</text>
+  <path class="arrow" d="M312 588 H504 V644" marker-end="url(#m2)"/>
+  <text class="lbl" x="420" y="579" text-anchor="middle" dominant-baseline="central">simulated brain</text>
+
+  <g class="box coral"><rect x="40" y="646" width="272" height="52" rx="8"/><text class="t" x="176" y="664" text-anchor="middle" dominant-baseline="central">Call Groq or Ollama</text><text class="s" x="176" y="681" text-anchor="middle" dominant-baseline="central">streaming, 12 s first-token</text></g>
+  <path class="arrow" d="M312 672 H366" marker-end="url(#m2)"/>
+  <text class="lbl" x="340" y="663" text-anchor="middle" dominant-baseline="central">fails</text>
+  <g class="box teal"><rect x="368" y="646" width="272" height="52" rx="8"/><text class="t" x="504" y="664" text-anchor="middle" dominant-baseline="central">Built-in simulated agent</text><text class="s" x="504" y="681" text-anchor="middle" dominant-baseline="central">no key, no network</text></g>
+  <path class="arrow" d="M176 698 V728" marker-end="url(#m2)"/>
+  <path class="arrow" d="M504 698 V756 H314" marker-end="url(#m2)"/>
+
+  <g class="box teal"><rect x="40" y="730" width="272" height="52" rx="8"/><text class="t" x="176" y="748" text-anchor="middle" dominant-baseline="central">Stream tokens, batched 90 ms</text><text class="s" x="176" y="765" text-anchor="middle" dominant-baseline="central">snapshot for late joiners</text></g>
+  <path class="arrow" d="M176 782 V812" marker-end="url(#m2)"/>
+
+  <g class="box gray"><rect x="40" y="814" width="272" height="52" rx="8"/><text class="t" x="176" y="832" text-anchor="middle" dominant-baseline="central">Every timeline updates</text><text class="s" x="176" y="849" text-anchor="middle" dominant-baseline="central">same words, same moment</text></g>
+</svg>
+</div>
+
+<!-- 3. Redirect timeline -->
+<h2>Redirecting an agent mid-stream</h2>
+<p class="cap">A redirect does not wait for the agent to finish. The running stream is aborted with a reason, what it wrote is kept and labelled, and a follow-up run starts in the same tick. If a human pauses in the gap, the pause wins.</p>
+<div class="card">
+<svg viewBox="0 0 680 392" role="img" aria-label="Timeline of a redirect">
+  <defs><marker id="m3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <g class="box teal"><rect x="40" y="40" width="180" height="52" rx="8"/><text class="t" x="130" y="58" text-anchor="middle" dominant-baseline="central">Agent is streaming</text><text class="s" x="130" y="75" text-anchor="middle" dominant-baseline="central">run A in progress</text></g>
+  <g class="box purple"><rect x="250" y="40" width="180" height="52" rx="8"/><text class="t" x="340" y="58" text-anchor="middle" dominant-baseline="central">Run A is aborted</text><text class="s" x="340" y="75" text-anchor="middle" dominant-baseline="central">reason: redirect</text></g>
+  <g class="box teal"><rect x="460" y="40" width="180" height="52" rx="8"/><text class="t" x="550" y="58" text-anchor="middle" dominant-baseline="central">Run B starts at once</text><text class="s" x="550" y="75" text-anchor="middle" dominant-baseline="central">new steering injected</text></g>
+
+  <line class="tick" x1="130" y1="92" x2="130" y2="154"/>
+  <line class="tick" x1="340" y1="92" x2="340" y2="154"/>
+  <line class="tick" x1="550" y1="92" x2="550" y2="154"/>
+
+  <path class="arrow" d="M40 160 H636" marker-end="url(#m3)"/>
+  <circle class="dot" cx="130" cy="160" r="5"/>
+  <circle class="dot" cx="235" cy="160" r="5"/>
+  <circle class="dot" cx="340" cy="160" r="5"/>
+  <circle class="dot" cx="445" cy="160" r="5"/>
+  <circle class="dot" cx="550" cy="160" r="5"/>
+  <text class="lbl" x="40" y="184" dominant-baseline="central">time</text>
+
+  <line class="tick" x1="235" y1="166" x2="235" y2="228"/>
+  <line class="tick" x1="445" y1="166" x2="445" y2="228"/>
+
+  <g class="box gray"><rect x="145" y="228" width="180" height="52" rx="8"/><text class="t" x="235" y="246" text-anchor="middle" dominant-baseline="central">Jordan hits Redirect</text><text class="s" x="235" y="263" text-anchor="middle" dominant-baseline="central">event reaches every tab</text></g>
+  <g class="box purple"><rect x="355" y="228" width="180" height="52" rx="8"/><text class="t" x="445" y="246" text-anchor="middle" dominant-baseline="central">Partial reply is kept</text><text class="s" x="445" y="263" text-anchor="middle" dominant-baseline="central">tagged interrupted</text></g>
+
+  <text class="lbl" x="40" y="298" dominant-baseline="central">The edge case</text>
+  <g class="box gray"><rect x="40" y="310" width="280" height="52" rx="8"/><text class="t" x="180" y="328" text-anchor="middle" dominant-baseline="central">Pause arrives before A finalizes</text><text class="s" x="180" y="345" text-anchor="middle" dominant-baseline="central">the race window</text></g>
+  <path class="arrow" d="M322 336 H356" marker-end="url(#m3)"/>
+  <g class="box purple"><rect x="360" y="310" width="280" height="52" rx="8"/><text class="t" x="500" y="328" text-anchor="middle" dominant-baseline="central">Reason becomes pause, no run B</text><text class="s" x="500" y="345" text-anchor="middle" dominant-baseline="central">the human always wins</text></g>
+</svg>
+</div>
+
+<!-- 4. Fallback chain -->
+<h2>When the model API misbehaves</h2>
+<p class="cap">A model server can refuse, hang, or answer with an empty body that looks like success. Each case is detected and the run falls back to the built-in agent with a visible notice, so the room never dead-ends.</p>
+<div class="card">
+<svg viewBox="0 0 680 312" role="img" aria-label="Provider failure detection and fallback">
+  <defs><marker id="m4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <g class="box coral"><rect x="40" y="96" width="180" height="52" rx="8"/><text class="t" x="130" y="114" text-anchor="middle" dominant-baseline="central">Call the model API</text><text class="s" x="130" y="131" text-anchor="middle" dominant-baseline="central">Groq SSE or Ollama NDJSON</text></g>
+
+  <path class="arrow" d="M220 122 H240 V46 H258" marker-end="url(#m4)"/>
+  <path class="arrow" d="M220 122 H258" marker-end="url(#m4)"/>
+  <path class="arrow" d="M220 122 H240 V198 H258" marker-end="url(#m4)"/>
+
+  <g class="box purple"><rect x="260" y="20" width="190" height="52" rx="8"/><text class="t" x="355" y="38" text-anchor="middle" dominant-baseline="central">No first token in 12 s</text><text class="s" x="355" y="55" text-anchor="middle" dominant-baseline="central">deadline aborts the fetch</text></g>
+  <g class="box purple"><rect x="260" y="96" width="190" height="52" rx="8"/><text class="t" x="355" y="114" text-anchor="middle" dominant-baseline="central">HTTP error or refused</text><text class="s" x="355" y="131" text-anchor="middle" dominant-baseline="central">bad key, 404, connection</text></g>
+  <g class="box purple"><rect x="260" y="172" width="190" height="52" rx="8"/><text class="t" x="355" y="190" text-anchor="middle" dominant-baseline="central">200 but empty stream</text><text class="s" x="355" y="207" text-anchor="middle" dominant-baseline="central">no usable text at all</text></g>
+
+  <path class="arrow" d="M450 46 H465 V198 H450"/>
+  <path class="arrow" d="M450 122 H488" marker-end="url(#m4)"/>
+
+  <g class="box teal"><rect x="490" y="96" width="150" height="52" rx="8"/><text class="t" x="565" y="114" text-anchor="middle" dominant-baseline="central">Simulated agent</text><text class="s" x="565" y="131" text-anchor="middle" dominant-baseline="central">notice, run continues</text></g>
+
+  <path class="arrow" d="M130 148 V228" marker-end="url(#m4)"/>
+  <g class="box gray"><rect x="40" y="230" width="180" height="52" rx="8"/><text class="t" x="130" y="248" text-anchor="middle" dominant-baseline="central">Tokens stream normally</text><text class="s" x="130" y="265" text-anchor="middle" dominant-baseline="central">the common case</text></g>
+  <path class="arrow" d="M220 256 H258" marker-end="url(#m4)"/>
+  <g class="box gray"><rect x="260" y="230" width="190" height="52" rx="8"/><text class="t" x="355" y="248" text-anchor="middle" dominant-baseline="central">Room keeps working</text><text class="s" x="355" y="265" text-anchor="middle" dominant-baseline="central">no dead ends for the team</text></g>
+  <path class="arrow" d="M565 148 V256 H452" marker-end="url(#m4)"/>
+</svg>
+</div>
+
+<!-- 5. Two runtimes -->
+<h2>Two runtimes, one protocol</h2>
+<p class="cap">The same client bundle runs against a Node server or with no backend at all. Both transports emit identical messages, so the reducer, timeline, presence bar and composer are shared verbatim.</p>
+<div class="card">
+<svg viewBox="0 0 680 436" role="img" aria-label="Server runtime and static runtime side by side">
+  <defs><marker id="m5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <g class="box gray"><rect x="40" y="20" width="600" height="52" rx="8"/><text class="t" x="340" y="38" text-anchor="middle" dominant-baseline="central">The same React client</text><text class="s" x="340" y="55" text-anchor="middle" dominant-baseline="central">one reducer, one protocol</text></g>
+  <path class="arrow" d="M182 72 V98" marker-end="url(#m5)"/>
+  <text class="lbl" x="190" y="86" dominant-baseline="central">realtime: ws</text>
+  <path class="arrow" d="M497 72 V98" marker-end="url(#m5)"/>
+  <text class="lbl" x="505" y="86" dominant-baseline="central">realtime: tabs</text>
+
+  <rect class="zone" x="40" y="100" width="285" height="306" rx="12"/>
+  <text class="t" x="182" y="122" text-anchor="middle" dominant-baseline="central" fill="#444441">Server runtime, npm start</text>
+  <text class="lbl" x="182" y="139" text-anchor="middle" dominant-baseline="central">WebSockets, any device</text>
+  <g class="box purple"><rect x="60" y="150" width="245" height="48" rx="8"/><text class="t" x="182" y="167" text-anchor="middle" dominant-baseline="central">WebSocket rooms</text><text class="s" x="182" y="183" text-anchor="middle" dominant-baseline="central">presence, snapshots</text></g>
+  <g class="box purple"><rect x="60" y="214" width="245" height="48" rx="8"/><text class="t" x="182" y="231" text-anchor="middle" dominant-baseline="central">Agent engine in the server</text><text class="s" x="182" y="247" text-anchor="middle" dominant-baseline="central">Ollama, Groq, simulated</text></g>
+  <g class="box purple"><rect x="60" y="278" width="245" height="48" rx="8"/><text class="t" x="182" y="295" text-anchor="middle" dominant-baseline="central">SQLite timeline</text><text class="s" x="182" y="311" text-anchor="middle" dominant-baseline="central">Node built-in, no native deps</text></g>
+  <g class="box coral"><rect x="60" y="342" width="245" height="48" rx="8"/><text class="t" x="182" y="359" text-anchor="middle" dominant-baseline="central">Ollama or Groq</text><text class="s" x="182" y="375" text-anchor="middle" dominant-baseline="central">local or hosted models</text></g>
+
+  <rect class="zone" x="355" y="100" width="285" height="306" rx="12"/>
+  <text class="t" x="497" y="122" text-anchor="middle" dominant-baseline="central" fill="#444441">Static runtime, Vercel</text>
+  <text class="lbl" x="497" y="139" text-anchor="middle" dominant-baseline="central">BroadcastChannel, same browser</text>
+  <g class="box teal"><rect x="375" y="150" width="245" height="48" rx="8"/><text class="t" x="497" y="167" text-anchor="middle" dominant-baseline="central">BroadcastChannel rooms</text><text class="s" x="497" y="183" text-anchor="middle" dominant-baseline="central">tabs in one browser</text></g>
+  <g class="box teal"><rect x="375" y="214" width="245" height="48" rx="8"/><text class="t" x="497" y="231" text-anchor="middle" dominant-baseline="central">Agent runs in the host tab</text><text class="s" x="497" y="247" text-anchor="middle" dominant-baseline="central">lowest-id tab takes over</text></g>
+  <g class="box teal"><rect x="375" y="278" width="245" height="48" rx="8"/><text class="t" x="497" y="295" text-anchor="middle" dominant-baseline="central">localStorage timeline</text><text class="s" x="497" y="311" text-anchor="middle" dominant-baseline="central">one record per room</text></g>
+  <g class="box coral"><rect x="375" y="342" width="245" height="48" rx="8"/><text class="t" x="497" y="359" text-anchor="middle" dominant-baseline="central">Groq via edge function</text><text class="s" x="497" y="375" text-anchor="middle" dominant-baseline="central">key forwarded once, never stored</text></g>
+</svg>
+</div>
+
+<!-- 6. Proof -->
+<h2>The proof</h2>
+<p class="cap">Numbers taken from the repository itself: the test suite, the engine constants and the dependency manifest.</p>
+<div class="stats">
+  <div class="stat"><div class="n">33</div><div class="d">end-to-end checks, all passing (<code>npm test</code>)</div></div>
+  <div class="stat"><div class="n">2</div><div class="d">runtime dependencies on the server (express, ws)</div></div>
+  <div class="stat"><div class="n">0</div><div class="d">native modules or cloud accounts required</div></div>
+  <div class="stat"><div class="n">2</div><div class="d">runtimes served by one client bundle</div></div>
+  <div class="stat"><div class="n">5</div><div class="d">multiplayer moves on a running agent</div></div>
+  <div class="stat"><div class="n">3</div><div class="d">agent brains: simulated, Ollama, Groq</div></div>
+  <div class="stat"><div class="n">90 ms</div><div class="d">token batching window before fan-out</div></div>
+  <div class="stat"><div class="n">12 s</div><div class="d">first-token deadline before falling back</div></div>
+  <div class="stat"><div class="n">30</div><div class="d">timeline events in each run's context</div></div>
+  <div class="stat"><div class="n">20 / min</div><div class="d">message rate limit per user</div></div>
+  <div class="stat"><div class="n">7 s</div><div class="d">silent-peer timeout before a tab takes over hosting</div></div>
+  <div class="stat"><div class="n">41</div><div class="d">tracked files in the repository</div></div>
+</div>
+
+<footer>Source: <a href="https://github.com/Sohail-5678/hivemind-ai">github.com/Sohail-5678/hivemind-ai</a> · Live: <a href="https://hivemind-agents.vercel.app">hivemind-agents.vercel.app</a></footer>
+</main>
+</body>
+</html>
