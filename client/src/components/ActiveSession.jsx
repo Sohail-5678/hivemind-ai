@@ -41,6 +41,7 @@ function Connected({ s, renderShareBar, banner, onExit, onRetry }) {
       onTyping={s.setTyping}
       onNotice={setLocalNotice}
       notice={notice}
+      noticeProgress={Boolean(s.notice && s.noticeProgress)}
       onClearNotice={clearNotice}
       banner={banner || null}
       shareBar={renderShareBar ? renderShareBar(s.session, s) : null}

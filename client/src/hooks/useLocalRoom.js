@@ -197,7 +197,7 @@ export function useLocalRoom(roomCode, userName, { apiKey = null, preferHost = f
       runClientAgent({
         provider: session.provider, model: session.model, apiKey: apiKeyRef.current, messages, redirected,
         signal: run.controller.signal, onDelta, onTool,
-        onNotice: (notice) => emit({ type: 'agent_notice', notice }),
+        onNotice: (notice, opts) => emit({ type: 'agent_notice', notice, progress: Boolean(opts?.progress) }),
       })
         .then(() => {
           finish('idle')

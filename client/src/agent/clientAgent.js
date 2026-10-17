@@ -152,7 +152,7 @@ export async function runClientAgent({ provider, model, apiKey, messages, redire
     const deadline = setTimeout(() => firstToken.abort(new Error('first_token_timeout')), firstTokenMs)
     let started = false
     const queuedNotice = provider === 'free' ? setTimeout(() => {
-      if (!started && !signal.aborted) onNotice?.('Queued — the free model allows one reply every 30 s. This answer will start shortly.')
+      if (!started && !signal.aborted) onNotice?.('Queued — the free model allows one reply every 30 s. This answer will start shortly.', { progress: true })
     }, QUEUED_NOTICE_MS) : null
     const providerSignal = anySignal([signal, firstToken.signal])
     try {
@@ -173,7 +173,7 @@ export async function runClientAgent({ provider, model, apiKey, messages, redire
       // Free tier cooldown: wait it out visibly, then try again.
       const cooling = (err.status === 402 || err.status === 429) && err.retryAfter && err.retryAfter <= 45
       if (!text && cooling && attempt < MAX_COOLDOWN_WAITS) {
-        onNotice?.(`${PROVIDER_LABEL[provider]} is cooling down (free tier: one reply every 30 s) — answering in ${err.retryAfter} s.`)
+        onNotice?.(`${PROVIDER_LABEL[provider]} is cooling down (free tier: one reply every 30 s) — answering in ${err.retryAfter} s.`, { progress: true })
         await sleep(err.retryAfter * 1000 + 500, signal)
         continue
       }
