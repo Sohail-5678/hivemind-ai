@@ -68,16 +68,16 @@ export const PATTERNS = {
   },
   debate: {
     id: 'debate', name: 'Peer-to-peer', aka: 'Decentralized debate',
-    summary: 'Three equal peers debate in turns, each proposes an answer, and everyone (humans included) votes. The winner writes it up.',
+    summary: 'Three equal peers debate in rounds, each proposes an answer, and everyone (humans included) votes. The winner writes it up.',
     usefulWhen: 'A decision with real tradeoffs where you want disagreement on the record.',
     pros: ['No central authority', 'Diverse views, explicit consensus', 'Humans vote with the agents'],
     cons: ['Communication cost grows with peers', 'Can stall without tie-breaks'],
-    axes: { control: 'decentralized', execution: 'round robin', collaboration: 'debate and vote', timing: 'runtime' },
+    axes: { control: 'decentralized', execution: 'turns in rounds', collaboration: 'debate and vote', timing: 'runtime' },
     team: ['builder', 'skeptic', 'pragmatist'], baseCalls: 7,
   },
   swarm: {
     id: 'swarm', name: 'Swarm', aka: 'Emergent collaboration',
-    summary: 'Five agents share a blackboard. Each turn they bid to speak, the highest bid wins, and the order emerges from the work itself.',
+    summary: 'Five agents share a blackboard and take turns by a strategy you choose (priority bids by default), so the order emerges from the work itself.',
     usefulWhen: 'Open-ended problems where the path is not known in advance.',
     pros: ['No single point of failure', 'Diverse coverage of edge cases', 'Emergent behaviour'],
     cons: ['Harder to predict and debug', 'Needs budgets, loop detection and tie-breaks'],
@@ -88,9 +88,34 @@ export const PATTERNS = {
 
 export const PATTERN_ORDER = ['auto', 'sequential', 'router', 'orchestrator', 'hierarchical', 'parallel', 'fanout', 'debate', 'swarm']
 
+// Group-chat turn-taking (lecture: Round Robin, Active Agent, Moderator,
+// Self-Selection, Priority Score / Auction). Only the two conversational
+// patterns take turns; the others run in an order their plan fixes.
 export const TURN_TAKING = {
-  round_robin: { id: 'round_robin', name: 'Round robin', summary: 'Agents speak in a fixed, repeating order.' },
-  auction: { id: 'auction', name: 'Priority bids', summary: 'Each agent scores how much it can add right now; the highest bid speaks.' },
+  round_robin: { id: 'round_robin', name: 'Round robin', aka: 'Fixed order', summary: 'Agents speak in a fixed, repeating order. A turn with nothing to work on is skipped.' },
+  handoff: { id: 'handoff', name: 'Handoff', aka: 'Active agent', summary: 'The agent that has the floor names who speaks next. A pick that cannot be used falls back to the default rule.' },
+  moderator: { id: 'moderator', name: 'Moderator', aka: 'Chat manager', summary: 'A Moderator agent reads the conversation and picks the next speaker each turn. Each real choice costs one extra call.' },
+  self_select: { id: 'self_select', name: 'Self-selection', aka: 'Agents opt in', summary: 'Each agent decides for itself whether it has something to add. Up to two speak at once, ties go to a fixed priority, and each has a response limit.' },
+  auction: { id: 'auction', name: 'Priority bids', aka: 'Priority score', summary: 'Each agent scores how much it can add right now; the highest bid speaks.' },
+}
+
+// Allowed strategies per pattern, default first. Empty: the pattern has no turns.
+const TURN_TAKING_BY_PATTERN = {
+  debate: ['round_robin', 'moderator', 'auction', 'handoff'],
+  swarm: ['auction', 'round_robin', 'moderator', 'self_select', 'handoff'],
+}
+
+export function turnTakingFor(patternId) {
+  return [...(TURN_TAKING_BY_PATTERN[patternId] || [])]
+}
+
+// Picks the Moderator makes in a run, on top of the speakers' own calls. A
+// debate's last peer in each round needs no pick; a swarm's first turn has a
+// single candidate (only the Researcher has work on an empty board).
+function moderatorCalls(patternId, rounds) {
+  if (patternId === 'debate') return 2 * rounds
+  if (patternId === 'swarm') return 6
+  return 0
 }
 
 export const PROVIDER_PROFILE = {
@@ -111,7 +136,7 @@ export function defaultConfig(patternId, provider = 'simulated') {
   const config = {
     width,
     rounds,
-    turnTaking: patternId === 'debate' ? 'round_robin' : 'auction',
+    turnTaking: turnTakingFor(patternId)[0] || null,
     fanInMs: slow ? 240_000 : 60_000,
   }
   config.maxCalls = Math.min(MAX_CALLS_CAP, estimateCalls(patternId, config) + 2)
@@ -119,7 +144,8 @@ export function defaultConfig(patternId, provider = 'simulated') {
   return config
 }
 
-export function estimateCalls(patternId, { width = 3, rounds = 2 } = {}) {
+export function estimateCalls(patternId, { width = 3, rounds = 2, turnTaking = null } = {}) {
+  const extra = turnTaking === 'moderator' ? moderatorCalls(patternId, rounds) : 0
   switch (patternId) {
     case 'sequential': return 5
     case 'router': return 2
@@ -127,8 +153,9 @@ export function estimateCalls(patternId, { width = 3, rounds = 2 } = {}) {
     case 'hierarchical': return 1 + width + width * width + width + 1
     case 'parallel': return 2 + Math.min(5, width + 1)
     case 'fanout': return width + 2
-    case 'debate': return 3 * rounds + 1
-    case 'swarm': return 9
+    case 'debate': return 3 * rounds + 1 + extra
+    // Round robin and self-selection revisit agents once new facts land.
+    case 'swarm': return (turnTaking === 'round_robin' || turnTaking === 'self_select' ? 10 : 9) + extra
     default: return 8
   }
 }
@@ -145,7 +172,9 @@ export function clampConfig(patternId, provider, raw = {}) {
   const out = {
     width: num(raw.width, 1, provider === 'free' ? 3 : 4, base.width),
     rounds: num(raw.rounds, 1, 3, base.rounds),
-    turnTaking: TURN_TAKING[raw.turnTaking] ? raw.turnTaking : base.turnTaking,
+    // A strategy the pattern does not offer (or any, for a pattern with no
+    // turns) falls back to the pattern's default.
+    turnTaking: turnTakingFor(patternId).includes(raw.turnTaking) ? raw.turnTaking : base.turnTaking,
     fanInMs: num(raw.fanInMs, 10_000, 300_000, base.fanInMs),
   }
   out.maxCalls = num(raw.maxCalls, 2, MAX_CALLS_CAP, Math.min(MAX_CALLS_CAP, estimateCalls(patternId, out) + 2))

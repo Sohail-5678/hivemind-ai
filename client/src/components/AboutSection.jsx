@@ -1,5 +1,5 @@
 import React, { useRef } from 'react'
-import { PATTERNS, PATTERN_ORDER, TURN_TAKING, defaultConfig, estimateCalls } from '@shared/swarm/patterns.js'
+import { PATTERNS, PATTERN_ORDER, TURN_TAKING, defaultConfig, estimateCalls, turnTakingFor } from '@shared/swarm/patterns.js'
 import { ROLES, agentCard } from '@shared/swarm/roles.js'
 import { TASK_STATE } from '@shared/swarm/a2a.js'
 import { PatternShape } from '../demo/PatternShape'
@@ -47,15 +47,20 @@ const SPECTRUM = [
   { stop: 'Fixed', patterns: ['sequential'], body: 'The shape is decided at design time and never changes.' },
   { stop: 'Planned', patterns: ['router', 'orchestrator', 'hierarchical', 'parallel', 'fanout'], body: 'A coordinating agent plans the shape at runtime, then the team runs the plan.' },
   { stop: 'Peer', patterns: ['debate'], body: 'Nobody is in charge. Equal peers argue in turns and settle it by vote.' },
-  { stop: 'Emergent', patterns: ['swarm'], body: 'The order of work emerges from bids on a shared board.' },
+  { stop: 'Emergent', patterns: ['swarm'], body: 'The order of work emerges from a shared board, by bids or another turn-taking rule.' },
   { stop: 'Self-designing', patterns: ['auto'], body: 'The system chooses its own architecture for each goal.' },
 ]
 
+// Every turn-taking strategy, with the teams that offer it (the default first).
+const TURN_TEAMS = [['debate', turnTakingFor('debate')], ['swarm', turnTakingFor('swarm')]]
+const TURN_NOTE = { auction: ' Every bid carries its reason, and ties break the same way every time.' }
 const TURNS = [
-  { name: TURN_TAKING.round_robin.name, where: 'Peer-to-peer', body: TURN_TAKING.round_robin.summary },
-  { name: 'Moderator', where: 'Orchestrator, Hierarchical', body: 'A coordinating agent decides who works next and hands each one its inputs.' },
-  { name: TURN_TAKING.auction.name, where: 'Swarm', body: `${TURN_TAKING.auction.summary} Every bid carries its reason, and ties break the same way every time.` },
-  { name: '@mentions', where: 'Every team', body: 'People call on any agent by role. In a swarm it raises that agent’s bid; elsewhere the agent sees the message marked as addressed to it.' },
+  ...Object.values(TURN_TAKING).map((t) => ({
+    name: t.name,
+    where: TURN_TEAMS.filter(([, ids]) => ids.includes(t.id)).map(([p, ids]) => `${PATTERNS[p].name}${ids[0] === t.id ? ' (default)' : ''}`).join(', '),
+    body: `${t.summary}${TURN_NOTE[t.id] || ''}`,
+  })),
+  { name: '@mentions', where: 'Every team', body: 'People call on any agent by role. Under priority bids it raises that agent’s bid; elsewhere the agent sees the message marked as addressed to it.' },
 ]
 
 const LOG_SAMPLE = [
@@ -108,7 +113,7 @@ const MONITOR_WATCHES = [
 const TEAM_GUARDS = [
   ['Budgets', 'Every architecture runs on a model-call budget (16 at most) with one call held back for the final answer. Continue adds 4, never past a hard cap of 24.'],
   ['Escalate, don’t act', 'The Monitor has no authority of its own. At the budget, or when a swarm keeps repeating itself, it asks the people in the room. No answer in 30 seconds means wrap up.'],
-  ['Loop detection', 'Output that overlaps the same agent’s last turn by more than 90% is flagged, and in a swarm that agent’s next bid is penalized.'],
+  ['Loop detection', 'Output that overlaps the same agent’s last turn by more than 90% is flagged. In a swarm a repeater loses priority (its bids are penalized, or it waits at the back when agents opt in), and a second repeat makes the Monitor ask the room.'],
   ['Fan-in deadline', 'Fan-out waits 60 seconds for its personas (4 minutes on the free model), then merges what arrived and says what is missing.'],
   ['Plans are validated', 'JSON plans are parsed defensively, roles must be known, sizes are capped, and a task may only depend on earlier tasks, so every task graph is acyclic. Unreadable plans fall back to a safe default.'],
   ['Prompt caps', 'Each teammate input is cut to 900 characters, the board to 1,800 and an agent’s whole context to 9,000. Board sections have their own item caps.'],

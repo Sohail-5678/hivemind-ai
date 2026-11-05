@@ -11,7 +11,7 @@
 .doc-shape-opt { stroke-dasharray: 2.5 3.5; opacity: 0.8; }
 .doc-shape-node { fill: var(--well); stroke: var(--agent); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
 .doc-shape-hub { fill: var(--agent-deep); }
-.doc-shape-human { fill: var(--human); }
+.doc-shape-human { fill: var(--human-fill); }
 .doc-shape-board { fill: var(--surface); stroke: var(--text-4); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
 
 /* ==========================================================================
@@ -54,10 +54,10 @@
 .demo-note-mark { width: 28px; height: 28px; flex-shrink: 0; align-self: flex-start; margin-top: 3px; }
 .demo-note-mark svg { display: block; width: 100%; height: 100%; }
 .demo-note-mark circle { fill: none; stroke: var(--line-2); stroke-width: 1; }
-.demo-note-mark .core { fill: var(--steel-500); stroke: none; }
+.demo-note-mark .core { fill: var(--neutral); stroke: none; }
 .demo-note-mark.live circle:nth-child(2) { stroke: var(--agent-ring); }
 .demo-note-mark.live .core {
-  fill: var(--agent); filter: drop-shadow(0 0 4px var(--agent-ring));
+  fill: var(--agent-fill); filter: drop-shadow(0 0 4px var(--agent-glow));
   transform-box: fill-box; transform-origin: center; animation: neu-pulse 1.8s var(--ease) infinite;
 }
 .demo-note-copy { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -98,8 +98,8 @@
 .about-orbit-board { fill: var(--surface); stroke: var(--line-2); stroke-width: 1; }
 .about-orbit-label { font-family: var(--font-mono); font-size: 6.5px; letter-spacing: 0.18em; fill: var(--text-4); }
 .about-orbit-agent { fill: var(--surface); stroke: var(--agent); stroke-width: 1.5; }
-.about-orbit-agent.live { fill: var(--agent); filter: drop-shadow(0 0 5px var(--agent-ring)); }
-.about-orbit-human { fill: var(--human); stroke: var(--human-deep); stroke-width: 1; }
+.about-orbit-agent.live { fill: var(--agent-fill); filter: drop-shadow(0 0 5px var(--agent-glow)); }
+.about-orbit-human { fill: var(--human-fill); stroke: var(--human-deep); stroke-width: 1; }
 .about-hero-legend { display: flex; gap: 18px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); }
 .about-hero-legend > span { display: inline-flex; align-items: center; gap: 8px; }
 

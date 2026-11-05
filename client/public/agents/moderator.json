@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Moderator",
+  "description": "Runs the floor in a group chat of agents: reads the conversation and picks who speaks next, with a reason. Never answers the task itself.",
+  "url": "https://hivemind-agents.vercel.app/agents/moderator.json",
+  "version": "1.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "moderate",
+      "name": "Moderate turns",
+      "description": "Chooses the next speaker from the agents who have something to add, and says why.",
+      "tags": [
+        "turn-taking",
+        "group chat"
+      ],
+      "examples": []
+    }
+  ]
+}

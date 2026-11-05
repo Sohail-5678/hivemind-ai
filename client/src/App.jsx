@@ -5,6 +5,7 @@ import { DemoSection } from './components/DemoSection'
 import { SampleSection } from './components/SampleSection'
 import { LiveSection } from './components/LiveSection'
 import { AboutSection } from './components/AboutSection'
+import { ThemeToggle } from './components/ThemeToggle'
 import { useRuntime } from './lib/runtime'
 import { useRoute, navigate, SECTIONS } from './lib/router'
 
@@ -126,6 +127,7 @@ export default function App() {
           </nav>
           <div className="topbar-right">
             <RuntimePill runtime={runtime} />
+            <ThemeToggle />
           </div>
         </header>
 

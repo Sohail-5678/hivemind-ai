@@ -23,7 +23,9 @@ function freshSwarm(msg) {
     order: [],
     graph: { layout: 'flow', nodes: [], edges: [], lastFlow: null },
     monitor: { calls: 0, maxCalls: msg.budget || 0, estTokens: 0, elapsedMs: 0, flags: [] },
+    turnTaking: msg.turnTaking || null,
     bids: null,
+    turn: null,
     vote: null,
     escalation: null,
     architect: null,
@@ -64,7 +66,8 @@ export function reduceSwarmView(view, msg) {
       return { swarm: { ...swarm, team, order }, blackboard }
     }
     case 'swarm_architect':
-      return { swarm: { ...swarm, pattern: msg.pattern, architect: { pattern: msg.pattern, reason: msg.reason } }, blackboard }
+      // The Architect's pattern brings its own default turn-taking (or none).
+      return { swarm: { ...swarm, pattern: msg.pattern, architect: { pattern: msg.pattern, reason: msg.reason }, turnTaking: msg.turnTaking !== undefined ? msg.turnTaking || null : swarm.turnTaking ?? null }, blackboard }
     case 'swarm_graph': {
       const statusOf = Object.fromEntries((swarm.graph.nodes || []).map((n) => [n.id, n.status]))
       const nodes = (msg.nodes || []).map((n) => ({ ...n, status: statusOf[n.id] || n.status || 'queued' }))
@@ -86,7 +89,7 @@ export function reduceSwarmView(view, msg) {
     case 'swarm_agent_done':
       return { swarm: patchAgent(swarm, msg.agentId, { status: msg.state === 'TASK_STATE_COMPLETED' ? 'done' : msg.state === 'TASK_STATE_CANCELED' ? 'canceled' : 'failed', stream: '' }), blackboard }
     case 'swarm_bids':
-      return { swarm: { ...swarm, bids: { round: msg.round, bids: msg.bids || [] } }, blackboard }
+      return { swarm: { ...swarm, bids: { round: msg.round, bids: msg.bids || [] }, turn: turnOf(swarm, msg) }, blackboard }
     case 'swarm_monitor':
       return { swarm: { ...swarm, monitor: { calls: msg.calls, maxCalls: msg.maxCalls, estTokens: msg.estTokens, elapsedMs: msg.elapsedMs, flags: msg.flags || [] } }, blackboard }
     case 'swarm_vote_open':
@@ -115,6 +118,22 @@ export function reduceSwarmView(view, msg) {
   }
 }
 
+// The latest turn decision: who got the floor, by which rule and why. A frame
+// from before turn-taking strategies only carried bids: the top bid spoke.
+function turnOf(swarm, msg) {
+  const bids = Array.isArray(msg.bids) ? msg.bids : []
+  const speakers = Array.isArray(msg.speakers) ? msg.speakers.filter(Boolean) : bids[0]?.agentId ? [bids[0].agentId] : []
+  return {
+    round: msg.round || 0,
+    debateRound: msg.debateRound || null,
+    strategy: msg.strategy || swarm.turnTaking || 'auction',
+    by: msg.by || 'bids',
+    speakers,
+    reason: typeof msg.reason === 'string' ? msg.reason : '',
+    optIns: Array.isArray(msg.optIns) ? msg.optIns : null,
+  }
+}
+
 // When a run is interrupted (pause/stop/redirect/host lost), close the view honestly.
 export function interruptedDone(swarm, outcome) {
   if (!swarm || swarm.status !== 'running') return null
@@ -125,5 +144,6 @@ export function interruptedDone(swarm, outcome) {
 export function compactSwarmView(swarm, { streamChars = 600 } = {}) {
   if (!swarm) return null
   const team = Object.fromEntries(Object.entries(swarm.team || {}).map(([id, a]) => [id, { ...a, stream: String(a.stream || '').slice(-streamChars), task: String(a.task || '').slice(0, 160) }]))
-  return { ...swarm, team }
+  const turn = swarm.turn ? { ...swarm.turn, reason: String(swarm.turn.reason || '').slice(0, 300), optIns: Array.isArray(swarm.turn.optIns) ? swarm.turn.optIns.slice(0, 8) : null } : swarm.turn ?? null
+  return { ...swarm, team, turn }
 }

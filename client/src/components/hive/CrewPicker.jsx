@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react'
-import { PATTERNS, PATTERN_ORDER, TURN_TAKING, clampConfig } from '@shared/swarm/patterns.js'
+import { PATTERNS, PATTERN_ORDER, TURN_TAKING, clampConfig, turnTakingFor } from '@shared/swarm/patterns.js'
 import { PatternGlyph, RoomGlyph } from './PatternGlyph'
 import { plannedTeam } from './roster'
 import { estimateFor, estimateText, glyph, patternId, plural, providerLabel } from './format'
@@ -56,8 +56,12 @@ export function CrewPicker({ mode = 'sample', value, onChange, provider = 'free'
   const id = useId()
   const gridRef = useRef(null)
   const cardRefs = useRef({})
-  // Knobs follow the pattern's defaults until the person touches one.
-  const touched = useRef(false)
+  const turnRefs = useRef({})
+  // Knobs follow the pattern's (and the brain's) defaults until the person
+  // touches them. Only the knobs actually set are kept: picking a turn-taking
+  // strategy must not pin a free-model team size after a switch to another brain.
+  const touched = useRef(new Set())
+  const kept = () => Object.fromEntries([...touched.current].filter((k) => k in config).map((k) => [k, config[k]]))
   const prevProvider = useRef(provider)
   const config = value || defaultCrewConfig(mode)
   const team = config.crew === 'team'
@@ -69,28 +73,46 @@ export function CrewPicker({ mode = 'sample', value, onChange, provider = 'free'
     if (prevProvider.current === provider) return
     prevProvider.current = provider
     if (!team) return
-    emit(sanitize(pattern, provider, touched.current ? config : {}))
+    emit(sanitize(pattern, provider, kept()))
   }, [provider]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const chooseCrew = (crew) => {
     if (crew === config.crew) return
     if (crew === 'single') emit({ ...config, crew: 'single', pattern })
-    else emit(sanitize(pattern, provider, touched.current ? config : {}))
+    else emit(sanitize(pattern, provider, kept()))
   }
 
   const choosePattern = (next) => {
     if (next === pattern && team) return
-    touched.current = false
+    touched.current = new Set()
     emit(sanitize(next, provider, {}))
   }
 
   const setKnob = (patch) => {
-    touched.current = true
+    for (const k of Object.keys(patch)) touched.current.add(k)
     const next = { ...cfg, ...patch }
     // Width and rounds change the call estimate: keep the budget on its default
     // if it was still on the old default, so the run is not starved.
     if (!('maxCalls' in patch) && cfg.maxCalls === derivedBudget(pattern, provider, cfg)) next.maxCalls = derivedBudget(pattern, provider, next)
     emit(sanitize(pattern, provider, next))
+  }
+
+  // Turn-taking cards: a radio group with roving focus, like the grid above.
+  const onTurnKey = (e) => {
+    const list = turnTakingFor(pattern)
+    const i = Math.max(0, list.indexOf(cfg.turnTaking))
+    const n = list.length
+    let next
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowDown': next = (i + 1) % n; break
+      case 'ArrowLeft': case 'ArrowUp': next = (i - 1 + n) % n; break
+      case 'Home': next = 0; break
+      case 'End': next = n - 1; break
+      default: return
+    }
+    e.preventDefault()
+    setKnob({ turnTaking: list[next] })
+    turnRefs.current[list[next]]?.focus()
   }
 
   const onGridKey = (e) => {
@@ -127,6 +149,8 @@ export function CrewPicker({ mode = 'sample', value, onChange, provider = 'free'
   const estPct = Math.max(0, Math.min(100, ((estCalls - budgetMin) / (budgetMax - budgetMin)) * 100))
   const budgetPct = ((cfg.maxCalls - budgetMin) / (budgetMax - budgetMin)) * 100
   const roster = plannedTeam({ ...cfg, pattern }, provider)
+  const turns = turnTakingFor(pattern)
+  const turn = TURN_TAKING[cfg.turnTaking]
 
   return (
     <div className="hv-crew">
@@ -236,6 +260,42 @@ export function CrewPicker({ mode = 'sample', value, onChange, provider = 'free'
             </div>
           </div>
 
+          {turns.length > 0 && turn && (
+            <div className="hv-crew-sec">
+              <div className="hv-crew-legend">
+                <span id={`${id}-turns`} className="label-mono">Turn-taking</span>
+                <span className="hv-crew-count">{`${turns.length} strategies`}</span>
+              </div>
+              <div className="hv-arch-grid" role="radiogroup" aria-labelledby={`${id}-turns`} onKeyDown={onTurnKey}>
+                {turns.map((tid, i) => {
+                  const t = TURN_TAKING[tid]
+                  const on = tid === cfg.turnTaking
+                  // The same budget rule as the other knobs: calls for this strategy at the current size.
+                  const calls = estimateFor(pattern, provider, { ...cfg, turnTaking: tid }).calls
+                  return (
+                    <button
+                      key={tid}
+                      ref={(el) => { turnRefs.current[tid] = el }}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      aria-label={`${t.name}, ${t.aka}`}
+                      aria-describedby={on ? `${id}-turn-summary` : undefined}
+                      tabIndex={on ? 0 : -1}
+                      className={`hv-arch${on ? ' is-on' : ''}`}
+                      onClick={() => { if (!on) setKnob({ turnTaking: tid }) }}
+                    >
+                      <span className="hv-arch-name">{t.name}</span>
+                      <span className="hv-arch-aka">{i === 0 ? `${t.aka} · default` : t.aka}</span>
+                      <span className="hv-arch-calls">{plural(calls, 'call')}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <p id={`${id}-turn-summary`} className="hv-when"><span className="label-mono">{turn.name}</span>{turn.summary}</p>
+            </div>
+          )}
+
           <div className="hv-knobs">
             {knob && (
               <fieldset className="hv-knob">
@@ -265,14 +325,6 @@ export function CrewPicker({ mode = 'sample', value, onChange, provider = 'free'
                 </div>
                 <span className="hv-knob-hint">{`${plural(cfg.rounds, 'round')} of debate, then a vote`}</span>
               </fieldset>
-            )}
-
-            {(pattern === 'debate' || pattern === 'swarm') && (
-              <div className="hv-knob">
-                <span className="hv-knob-label">Turn-taking</span>
-                <span className="hv-turn">{pattern === 'debate' ? TURN_TAKING.round_robin.name : TURN_TAKING.auction.name}</span>
-                <span className="hv-knob-hint">{pattern === 'debate' ? TURN_TAKING.round_robin.summary : TURN_TAKING.auction.summary}</span>
-              </div>
             )}
 
             <div className="hv-knob hv-knob-budget">

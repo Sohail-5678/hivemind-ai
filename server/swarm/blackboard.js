@@ -16,6 +16,10 @@ const TAGS = {
 }
 const TAG_LINE = /^\s*(?:[-*]\s*)?\**\s*(FACT|QUESTION|DECISION|PLAN)\s*\**\s*[:：]\s*(.+?)\s*$/i
 const CONTROL_LINE = /^\s*(?:[-*]\s*)?\**\s*(VERDICT|VOTE|PROPOSAL)\s*\**\s*[:：]\s*(.+?)\s*$/i
+// Handoff turn-taking: "NEXT: <teammate>", optionally followed by a short why
+// ("NEXT: Critic, to check the draft"). Upper case and a short name only, so
+// an ordinary "Next: we ship it" line in a draft stays in the prose.
+const NEXT_LINE = /^\s*(?:[-*]\s*)?\**\s*NEXT\s*\**\s*[:：]\s*\**\s*(@?[A-Za-z][A-Za-z ·'-]{0,40}?)\s*\**\s*(?:[.!]|[,;:(–—]\s*[^\n]{0,120}|\s-\s[^\n]{0,120})?\s*$/
 
 export function emptyBoard() {
   return { goal: '', constraints: [], plan: [], facts: [], questions: [], decisions: [], draft: '', final: '', updatedAt: 0, seq: 0 }
@@ -71,6 +75,8 @@ export function parseTags(text) {
   for (const line of String(text || '').split('\n')) {
     const m = line.match(TAG_LINE)
     if (m) { items.push({ kind: TAGS[m[1].toUpperCase()], text: m[2].replace(/\**$/, '').trim() }); continue }
+    const n = line.match(NEXT_LINE)
+    if (n) { control.next = n[1].trim(); continue }
     const c = line.match(CONTROL_LINE)
     if (c) control[c[1].toLowerCase()] = c[2].replace(/\**$/, '').trim()
   }
@@ -79,7 +85,7 @@ export function parseTags(text) {
 
 // The prose a human should read: tagged lines removed (they show on the board).
 export function stripTags(text) {
-  const kept = String(text || '').split('\n').filter((l) => !TAG_LINE.test(l) && !CONTROL_LINE.test(l))
+  const kept = String(text || '').split('\n').filter((l) => !TAG_LINE.test(l) && !CONTROL_LINE.test(l) && !NEXT_LINE.test(l))
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 

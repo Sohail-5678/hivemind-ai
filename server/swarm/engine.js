@@ -5,7 +5,7 @@
 // lecture plus an adaptive Architect, on top of a shared blackboard, with a
 // deterministic Monitor that escalates to the humans in the room.
 import { ROLES, SPECIALISTS, makeAgent, agentAuthor } from './roles.js'
-import { PATTERNS, PATTERN_ORDER, PROVIDER_PROFILE, clampConfig, estimateCalls } from './patterns.js'
+import { PATTERNS, PATTERN_ORDER, PROVIDER_PROFILE, clampConfig, estimateCalls, turnTakingFor } from './patterns.js'
 import { emptyBoard, normalizeBoard, addItem, setText, applyTags, stripTags, renderBoard, BOARD_KINDS } from './blackboard.js'
 import { newTask, newMessage, a2aMeta, TASK_STATE } from './a2a.js'
 import { extractJSON, asString, asArray } from './json.js'
@@ -292,16 +292,29 @@ export function createSwarmRun(opts) {
     if (reserve) S.reserved++
   }
 
-  function afterCall(agent, text) {
-    const w = words(text)
-    const prev = S.lastByAgent.get(agent.id)
-    if (prev && w.size > 8 && jaccard(prev, w) > 0.9) {
-      S.loopCount++
-      S.flags.push(`loop:${agent.id}`)
-      note('monitor', `Monitor: ${agent.name} repeated itself almost word for word. Its next bid is penalized.`)
+  // Only what agents say is checked for repeats: a Moderator naming the same
+  // speaker for the same reason twice is doing its job.
+  function afterCall(agent, text, kind) {
+    if (kind === 'text' || kind === 'debate_turn') {
+      const w = words(text)
+      const prev = S.lastByAgent.get(agent.id)
+      if (prev && w.size > 8 && jaccard(prev, w) > 0.9) {
+        S.loopCount++
+        S.flags.push(`loop:${agent.id}`)
+        note('monitor', `Monitor: ${agent.name} repeated itself almost word for word.${loopConsequence()}`)
+      }
+      S.lastByAgent.set(agent.id, w)
     }
-    S.lastByAgent.set(agent.id, w)
     monitorEmit()
+  }
+
+  // What a repeat costs, in the words of the strategy that is running (the
+  // UI says the same: format.js explainFlag).
+  function loopConsequence() {
+    if (S.pattern !== 'swarm') return ''
+    const t = S.config.turnTaking
+    const cost = t === 'self_select' ? ' It moves to the back of the queue when it opts in.' : t === 'auction' ? ' Its bids are penalized.' : ''
+    return `${cost} A second repeat makes the Monitor ask the room.`
   }
 
   async function escalate(kind, reason, defaultDecision) {
@@ -398,7 +411,7 @@ export function createSwarmRun(opts) {
     flush()
 
     S.estTokens += Math.round((messages_len(agent, task, inputs) + String(result.text).length) / 4)
-    afterCall(agent, result.text)
+    afterCall(agent, result.text, kind)
 
     if (!streams) {
       emit({ type: 'swarm_agent_done', runId, agentId: agent.id, nodeId, state: TASK_STATE.completed })
@@ -500,7 +513,7 @@ export function createSwarmRun(opts) {
     }
     S.pattern = pattern
     S.config = { ...clampConfig(pattern, provider, {}), maxCalls: S.budget }
-    emit({ type: 'swarm_architect', runId, pattern, reason })
+    emit({ type: 'swarm_architect', runId, pattern, reason, turnTaking: S.config.turnTaking })
     note('architect', `Architect chose ${PATTERNS[pattern].name} (${PATTERNS[pattern].aka}): ${reason}`, { pattern })
     return pattern
   }
@@ -696,25 +709,129 @@ export function createSwarmRun(opts) {
     await runAgent(CB, { nodeId: 'combine', task: `Merge the perspectives into one answer with tradeoffs.${missing.length ? ` These perspectives did not report ${wrap ? 'before the budget ran out' : 'in time'}: ${missing.map((m) => m.name).join(', ')}. Say so.` : ''}`, inputs: results, final: true, maxTokens: 750 })
   }
 
+  // ================================================================ turn-taking
+  // Debate and swarm follow S.config.turnTaking (patterns.js TURN_TAKING). Each
+  // turn emits one decision (swarm_bids, the name older views know): who got
+  // the floor, by which rule (bids, order, moderator, handoff, self) and why.
+  const SELF_MAX = 2   // self-selection: at most this many speakers per turn
+  const SELF_LIMIT = 3 // ... and this many turns per agent, unless a human calls on it
+  let turnSeq = 0
+
+  function strategyFor(pattern) {
+    const allowed = turnTakingFor(pattern)
+    return allowed.includes(S.config.turnTaking) ? S.config.turnTaking : allowed[0]
+  }
+
+  function emitTurn({ strategy, speakers, by, reason, bids = [], optIns = null, debateRound = null }) {
+    emit({
+      type: 'swarm_bids', runId, round: ++turnSeq, strategy, bids,
+      speakers: speakers.map((a) => a.id), by, reason: asString(reason, 300),
+      ...(optIns ? { optIns } : {}), ...(debateRound ? { debateRound } : {}),
+    })
+  }
+
+  const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five']
+  const countWord = (n) => COUNT_WORDS[n] || String(n)
+  const nameList = (agents) => {
+    const names = agents.map((a) => a.name)
+    return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  }
+  const keysOf = (a) => [a.role, a.id.toLowerCase(), a.name.toLowerCase()]
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const namedAt = (text, a) => {
+    let at = -1
+    for (const key of keysOf(a)) {
+      const m = new RegExp(`(^|[^a-z])${escapeRe(key)}(?![a-z])`).exec(text)
+      if (m && (at < 0 || m.index < at)) at = m.index
+    }
+    return at
+  }
+  // "NEXT: the Skeptic", "@critic", "Critic." -> the first agent it names, or null.
+  function namedAgent(text, agents) {
+    const t = String(text || '').toLowerCase()
+    let best = null
+    let bestAt = Infinity
+    for (const a of agents) {
+      const at = namedAt(t, a)
+      if (at >= 0 && at < bestAt) { best = a; bestAt = at }
+    }
+    return best
+  }
+  const info = (a) => ({ id: a.id, role: a.role, name: a.name })
+  // Handoff: the NEXT control line, or else a last line that starts with
+  // "Next:" in any case (a model that writes "Next: critic" still named
+  // someone; that line stays in the prose, since it may be an ordinary step).
+  function nextLineOf(out) {
+    if (out?.control?.next) return String(out.control.next)
+    const lines = String(out?.text || '').split('\n').map((l) => l.trim()).filter(Boolean)
+    const m = /^[-*\s]*\**\s*next\s*\**\s*[:：]\s*(.{1,80})$/i.exec(lines[lines.length - 1] || '')
+    return m ? m[1].replace(/\*+/g, '').trim() : ''
+  }
+
+  // One Moderator call. Its pick must be one of the candidates; the caller
+  // falls back to its default rule otherwise.
+  async function moderate(M, { candidates, task, moderation, inputs }) {
+    const r = await runAgent(M, {
+      nodeId: 'moderator', kind: 'moderate', maxTokens: 160, inputs, task,
+      schema: `Schema: {"speaker": one of ${JSON.stringify(candidates.map((a) => a.id))}, "reason": "one sentence"}`,
+      scriptedCtx: { moderation },
+    })
+    const raw = typeof r.json?.speaker === 'string' ? r.json.speaker : ''
+    const pick = candidates.find((a) => a.id === raw) || (raw ? namedAgent(raw, candidates) : null)
+    return { pick, reason: asString(r.json?.reason, 240), raw: asString(raw, 40) }
+  }
+
   async function debate() {
     const peers = ['builder', 'skeptic', 'pragmatist'].map((r) => register(makeAgent(r)))
-    setGraph('ring', peers.map((p, i) => ({ id: p.id, agentId: p.id, layer: 0, order: i })), peers.map((p, i) => ({ from: p.id, to: peers[(i + 1) % peers.length].id })))
+    const strategy = strategyFor('debate')
+    const M = strategy === 'moderator' ? register(makeAgent('moderator')) : null
+    // The Moderator sits in the middle of the ring it runs.
+    setGraph('ring',
+      [...peers.map((p, i) => ({ id: p.id, agentId: p.id, layer: 0, order: i })), ...(M ? [{ id: 'moderator', agentId: M.id, layer: 1 }] : [])],
+      peers.map((p, i) => ({ from: p.id, to: peers[(i + 1) % peers.length].id })))
     const rounds = Math.max(1, Math.min(3, S.config.rounds))
     const turns = []
+    // How often the others challenged (named) a peer since it last spoke, and
+    // at which turn: the bids weigh it, the Moderator sees who was challenged.
+    const pressure = new Map(peers.map((p) => [p.id, { count: 0, at: -1 }]))
     let prev = null
+    let nextPick = null // handoff: the NEXT line of the peer that just spoke
     for (let round = 1; round <= rounds; round++) {
-      for (const peer of peers) {
+      const left = [...peers]
+      while (left.length) {
+        // At the budget the Monitor asks the room before anyone gets the floor
+        // (as in the swarm), so no turn is announced for a peer who never speaks.
+        if (S.calls + S.reserved >= S.budget - 1) await beforeCall(false, false)
         const last = round === rounds
+        const ds = currentDirectives()
+        const pick = await debateTurn({ strategy, M, peers, round, rounds, left, prev, nextPick, turns, pressure, ds })
+        const peer = pick.peer
+        left.splice(left.indexOf(peer), 1)
+        emitTurn({ strategy, speakers: [peer], by: pick.by, reason: pick.reason, bids: pick.bids || [], debateRound: round })
+        for (const d of ds) if (mentionsAgent(d.content, peer)) S.consumedMentions.add(`${d.id}:${peer.id}`)
+        if (pick.by === 'moderator') flow('moderator', peer.id)
         if (prev) flow(prev.id, peer.id)
+        // Handoff: the speaker names who goes next whenever there is a choice.
+        const options = strategy !== 'handoff' ? [] : left.length > 1 ? left : !left.length && round < rounds ? peers.filter((p) => p !== peer) : []
+        const handLine = options.length ? ` End with one line "NEXT: <name>" naming the peer who should speak next: ${options.map((p) => p.name).join(' or ')}. Never yourself.` : ''
         const t = await runAgent(peer, {
           nodeId: peer.id, kind: 'debate_turn', maxTokens: 380,
-          task: last
+          task: (last
             ? 'Final round. State your final position in a few sentences, then end with two lines: "PROPOSAL: <your recommendation in one sentence>" and "VOTE: <the name of the other peer whose proposal you support, never yourself>".'
-            : `Round ${round}. Make your case and respond directly to the other peers' points.`,
+            : `Round ${round}. Make your case and respond directly to the other peers' points.`) + handLine,
           inputs: turns.slice(-3),
-          scriptedCtx: { final: last, prevTurns: turns.length > 0, turn: turns.length },
+          scriptedCtx: { final: last, prevTurns: turns.length > 0, turn: turns.length, replyTo: prev?.name || null, handoff: options.length ? options.map(info) : null },
         })
         turns.push(t)
+        const prose = String(t.prose || '').toLowerCase()
+        for (const p of peers) {
+          if (p === peer || namedAt(prose, p) < 0) continue
+          const s = pressure.get(p.id)
+          s.count++
+          s.at = turns.length - 1
+        }
+        pressure.get(peer.id).count = 0
+        nextPick = options.length ? nextLineOf(t) : null
         prev = peer
       }
     }
@@ -735,18 +852,95 @@ export function createSwarmRun(opts) {
     await runAgent(W, { nodeId: W.id, task: 'Your proposal won the vote. Write the final answer for the humans and fairly note the strongest objection that was raised.', inputs: turns.slice(-6), final: true, maxTokens: 700 })
   }
 
+  // Who speaks next in a debate round. Every peer still speaks exactly once
+  // per round; the strategy only orders the round.
+  async function debateTurn({ strategy, M, peers, round, rounds, left, prev, nextPick, turns, pressure, ds }) {
+    // The peer after the previous speaker on the ring, among those still to speak.
+    const nextInOrder = () => {
+      const i = prev ? peers.indexOf(prev) : -1
+      for (let k = 1; k <= peers.length; k++) {
+        const p = peers[(i + k) % peers.length]
+        if (left.includes(p) && (p !== prev || left.length === 1)) return p
+      }
+      return left[0]
+    }
+    if (strategy === 'round_robin') return { peer: left[0], by: 'order', reason: `The ${left[0].name} is next in the fixed order.` }
+    if (left.length === 1) return { peer: left[0], by: 'order', reason: `Only the ${left[0].name} has not spoken in round ${round} yet.` }
+    const mentionOf = (p) => ds.find((d) => !S.consumedMentions.has(`${d.id}:${p.id}`) && mentionsAgent(d.content, p))
+
+    if (strategy === 'auction') {
+      const bids = left.map((p) => {
+        const s = pressure.get(p.id)
+        let score = 0.3
+        const why = []
+        if (s.count) { score += 0.35 * Math.min(3, s.count); why.push(`challenged ${s.count === 1 ? 'once' : `${s.count} times`} since it last spoke`) }
+        const mention = mentionOf(p)
+        if (mention) { score += 0.6; why.push(`${mention.author?.name || 'a human'} called on it`) }
+        if (p === prev) { score -= 0.5; why.push('just spoke') }
+        return { agentId: p.id, score: Math.round(Math.max(0, Math.min(2, score)) * 100) / 100, reason: why.join(', ') || 'nobody has challenged it yet', at: s.at }
+      }).sort((x, y) => y.score - x.score || y.at - x.at || peers.findIndex((p) => p.id === x.agentId) - peers.findIndex((p) => p.id === y.agentId))
+      // Ties go to the peer challenged most recently, then to seat order.
+      const [first, second] = bids
+      const tie = second && second.score === first.score ? (second.at !== first.at ? ' (a tie: it was challenged most recently)' : ' (a tie, so seat order decides)') : ''
+      const top = peers.find((p) => p.id === first.agentId)
+      return { peer: top, by: 'bids', bids: bids.map(({ at, ...b }) => b), reason: `The ${top.name} bid highest: ${first.reason}${tie}.` } // eslint-disable-line no-unused-vars
+    }
+
+    if (strategy === 'handoff') {
+      if (!prev) return { peer: left[0], by: 'order', reason: `The ${left[0].name} opens the debate.` }
+      const named = nextPick ? namedAgent(nextPick, peers) : null
+      if (named && named !== prev && left.includes(named)) return { peer: named, by: 'handoff', reason: `The ${prev.name} handed the floor to the ${named.name}.` }
+      const fb = nextInOrder()
+      const why = !nextPick ? `The ${prev.name} did not name anyone`
+        : !named ? `The ${prev.name} named "${asString(nextPick, 30)}", who is not in this debate`
+          : named === prev ? `The ${prev.name} named itself`
+            : `The ${prev.name} named the ${named.name}, who already spoke this round`
+      return { peer: fb, by: 'order', reason: `${why}, so the next peer in order, the ${fb.name}, speaks.` }
+    }
+
+    // Moderator. The last speaker never opens the next round while others wait.
+    const candidates = prev && left.includes(prev) ? left.filter((p) => p !== prev) : left
+    // Calls are short: every peer's turn comes before the Moderator's picks.
+    const turnsLeft = (rounds - round) * peers.length + left.length
+    if (S.budget - 1 - S.calls - S.reserved < turnsLeft + 1) {
+      const fb = nextInOrder()
+      return { peer: fb, by: 'order', reason: `Calls are short, so the Moderator stepped aside and the ${fb.name} speaks in order.` }
+    }
+    const lastTurn = turns[turns.length - 1]
+    const lastProse = String(lastTurn?.prose || '').toLowerCase()
+    const challenged = prev ? candidates.filter((p) => namedAt(lastProse, p) >= 0).sort((a, b) => namedAt(lastProse, a) - namedAt(lastProse, b))[0] : null
+    const moderation = { pattern: 'debate', candidates: candidates.map(info), last: prev ? info(prev) : null, addressed: challenged?.role || null, mentioned: candidates.find(mentionOf)?.role || null }
+    const task = `Round ${round} of ${rounds} of the debate. Choose which peer speaks next: ${candidates.map((p) => `${p.id} (${p.name}: ${ROLES[p.role].description})`).join('; ')}. Prefer the peer the debate needs most right now, for example one who was just challenged or whose view is missing.`
+    const { pick, reason, raw } = await moderate(M, { candidates, task, moderation, inputs: turns.slice(-3) })
+    if (pick) return { peer: pick, by: 'moderator', reason: reason || `The Moderator gave the floor to the ${pick.name}.` }
+    const fb = nextInOrder()
+    return { peer: fb, by: 'order', reason: `The Moderator's pick${raw ? ` ("${raw}")` : ''} could not be used, so the next peer in order, the ${fb.name}, speaks.` }
+  }
+
   async function swarm() {
     const roster = ['researcher', 'interrogator', 'analyst', 'critic', 'synthesizer'].map((r) => register(makeAgent(r)))
-    setGraph('ring', roster.map((a, i) => ({ id: a.id, agentId: a.id, layer: 0, order: i })), [])
+    const strategy = strategyFor('swarm')
+    const M = strategy === 'moderator' ? register(makeAgent('moderator')) : null
+    setGraph('ring', [...roster.map((a, i) => ({ id: a.id, agentId: a.id, layer: 0, order: i })), ...(M ? [{ id: 'moderator', agentId: M.id, layer: 1 }] : [])], [])
+    const byRole = Object.fromEntries(roster.map((a) => [a.role, a]))
+    const byId = (id) => roster.find((a) => a.id === id)
+    const counts = (b) => ({ facts: b.facts.length, questions: b.questions.length, decisions: b.decisions.length })
+    const zero = { facts: 0, questions: 0, decisions: 0 }
     const spoke = new Map(roster.map((a) => [a.id, 0]))
-    const seenAt = new Map(roster.map((a) => [a.id, { facts: 0, questions: 0, decisions: 0 }]))
-    let last = null
+    const seenAt = new Map(roster.map((a) => [a.id, zero]))  // the board when it last got the floor
+    const afterAt = new Map(roster.map((a) => [a.id, zero])) // the board when its last turn ended
+    let last = []        // the previous turn's speakers
     let draftSeq = 0
+    let draftAt = zero   // the board the latest draft was written from
     let reviewedSeq = 0
     let reviseRequested = false
     let revisedOnce = false
     let turn = 0
+    let rrNext = 0       // round robin: where the fixed order resumes
+    let nextPick = null  // handoff: the NEXT line of the agent that just spoke
     const priority = ['critic', 'synthesizer', 'analyst', 'researcher', 'interrogator']
+    const RR_ORDER = ['researcher', 'interrogator', 'analyst', 'synthesizer', 'critic']
+    const latestDraft = () => [...S.outputs].reverse().find((o) => o.agent.role === 'synthesizer')
 
     while (true) {
       if (signal.aborted) throw abortError()
@@ -755,8 +949,14 @@ export function createSwarmRun(opts) {
       if (S.budget - S.calls <= 1) await beforeCall(false, false)
       const remaining = S.budget - S.calls
       const b = S.board
+      const cur = counts(b) // the board this turn's choice reads
       const ds = currentDirectives()
-      const bids = roster.map((a) => {
+      const mentionOf = (a) => ds.find((d) => !S.consumedMentions.has(`${d.id}:${a.id}`) && mentionsAgent(d.content, a))
+      const looped = (a) => S.flags.includes(`loop:${a.id}`)
+
+      // Priority bids (the auction, and the fallback for a handoff or a
+      // Moderator pick that cannot be used).
+      const scoreBids = () => roster.map((a) => {
         let score = 0
         const why = []
         const seen = seenAt.get(a.id)
@@ -787,17 +987,151 @@ export function createSwarmRun(opts) {
             if (draftSeq > reviewedSeq) { score += 0.85; why.push('there is an unreviewed draft') }
             break
         }
-        const mention = ds.find((d) => !S.consumedMentions.has(`${d.id}:${a.id}`) && mentionsAgent(d.content, a))
+        const mention = mentionOf(a)
         if (mention) { score += 0.6; why.push(`${mention.author?.name || 'a human'} called on it`) }
-        if (last && last.id === a.id) { score -= 0.5; why.push('just spoke') }
-        if (S.flags.includes(`loop:${a.id}`)) { score -= 0.4; why.push('repeated itself') }
+        if (last.includes(a)) { score -= 0.5; why.push('just spoke') }
+        if (looped(a)) { score -= 0.4; why.push('repeated itself') }
         return { agentId: a.id, score: Math.round(Math.max(0, Math.min(2, score)) * 100) / 100, reason: why.join(', ') || 'nothing new to add' }
-      }).sort((x, y) => y.score - x.score || priority.indexOf(roster.find((r) => r.id === x.agentId).role) - priority.indexOf(roster.find((r) => r.id === y.agentId).role))
-      emit({ type: 'swarm_bids', runId, round: turn + 1, bids })
-      const speaker = roster.find((a) => a.id === bids[0].agentId)
-      for (const d of ds) if (mentionsAgent(d.content, speaker)) S.consumedMentions.add(`${d.id}:${speaker.id}`)
-      if (last) flow(last.id, speaker.id)
-      seenAt.set(speaker.id, { facts: b.facts.length, questions: b.questions.length, decisions: b.decisions.length })
+      }).sort((x, y) => y.score - x.score || priority.indexOf(byId(x.agentId).role) - priority.indexOf(byId(y.agentId).role))
+      const byBids = (why) => {
+        const bids = scoreBids()
+        const top = byId(bids[0].agentId)
+        const tie = bids[1] && bids[1].score === bids[0].score ? ' (a tie, so the fixed priority decides)' : ''
+        return { speakers: [top], by: 'bids', bids, reason: why ? `${why}, so the highest bid speaks: the ${top.name}.` : `The ${top.name} bid highest: ${bids[0].reason}${tie}.` }
+      }
+
+      // What an agent has to work on right now (null: nothing). Round robin
+      // skips an agent with no work, self-selection is opting in with it, and
+      // the Moderator only chooses among agents that have some.
+      const workOf = (a) => {
+        const mention = mentionOf(a)
+        if (mention) return `${mention.author?.name || 'a human'} called on it`
+        const after = afterAt.get(a.id)
+        const spoken = spoke.get(a.id) > 0
+        const newFacts = cur.facts > after.facts
+        switch (a.role) {
+          case 'researcher':
+            if (cur.facts < 3) return 'the board needs more facts'
+            if (cur.questions > after.questions) return 'there are new questions it can answer'
+            return null
+          case 'interrogator':
+            if (!cur.facts) return null
+            if (!spoken) return 'nobody has probed the facts for gaps'
+            return newFacts && cur.questions < 3 ? 'new facts to probe' : null
+          case 'analyst':
+            if (!cur.facts) return null
+            if (!cur.decisions) return cur.facts >= 3 ? 'enough facts to decide' : 'facts to weigh'
+            return spoken && newFacts ? 'new facts since its last decision' : null
+          case 'synthesizer':
+            if (reviseRequested) return 'the Critic asked for a revision'
+            if (!draftSeq && cur.decisions) return 'decisions but no draft yet'
+            if (!draftSeq && remaining <= 3) return 'the budget is nearly spent'
+            return draftSeq && cur.decisions > draftAt.decisions ? 'new decisions since the last draft' : null
+          case 'critic':
+            return draftSeq > reviewedSeq ? 'there is an unreviewed draft' : null
+          default:
+            return null
+        }
+      }
+      // Nobody has anything to add: the Synthesizer drafts if the board moved
+      // since the last draft (and it may still speak); otherwise the latest
+      // draft stands.
+      const nobody = (by, why, { synthesizerMay = true } = {}) => {
+        const moved = !draftSeq || cur.facts > draftAt.facts || cur.decisions > draftAt.decisions
+        if (moved && (synthesizerMay || !draftSeq)) return { speakers: [byRole.synthesizer], by, reason: `${why}, so the Synthesizer drafts from the board.` }
+        return { done: `${why}, so the latest draft stands as the answer.` }
+      }
+
+      let d
+      if (strategy === 'round_robin') {
+        const skipped = []
+        for (let k = 0; k < RR_ORDER.length && !d; k++) {
+          const a = byRole[RR_ORDER[(rrNext + k) % RR_ORDER.length]]
+          if (!workOf(a)) { skipped.push(a); continue }
+          rrNext = (rrNext + k + 1) % RR_ORDER.length
+          d = { speakers: [a], by: 'order', reason: `The ${a.name} is next in the fixed order${skipped.length ? `, after skipping the ${nameList(skipped)} with nothing to work on` : ''}.` }
+        }
+        if (!d) d = nobody('order', 'Nobody in the fixed order had anything to work on')
+      } else if (strategy === 'self_select') {
+        // The lecture's self-selection needs tie-breaks and response limits:
+        // a fixed priority, at most SELF_MAX at once, SELF_LIMIT turns each.
+        const limited = []
+        const optIns = []
+        for (const a of roster) {
+          const why = workOf(a)
+          if (!why) continue
+          if (spoke.get(a.id) >= SELF_LIMIT && !mentionOf(a)) { limited.push(a); continue }
+          optIns.push({ a, why })
+        }
+        optIns.sort((x, y) => Number(looped(x.a)) - Number(looped(y.a)) || priority.indexOf(x.a.role) - priority.indexOf(y.a.role))
+        const room = Math.max(1, Math.min(SELF_MAX, S.budget - S.calls - S.reserved - 1))
+        const speakers = []
+        for (const x of optIns) {
+          if (speakers.length >= room) break
+          // The Critic never reviews a draft the Synthesizer is rewriting that same turn.
+          const clash = (r1, r2) => (r1 === 'critic' && r2 === 'synthesizer') || (r1 === 'synthesizer' && r2 === 'critic')
+          if (speakers.some((s) => clash(s.role, x.a.role))) continue
+          speakers.push(x.a)
+        }
+        const list = optIns.map((x) => ({ agentId: x.a.id, reason: x.why }))
+        if (!speakers.length) {
+          const why = limited.length ? `Nobody opted in (the ${nameList(limited)} reached the response limit)` : 'Nobody opted in'
+          d = { ...nobody('self', why, { synthesizerMay: spoke.get(byRole.synthesizer.id) < SELF_LIMIT }), optIns: list }
+        } else {
+          const waiting = optIns.length - speakers.length
+          const reason = optIns.length === 1
+            ? `Only the ${speakers[0].name} opted in: ${optIns[0].why}.`
+            : `${countWord(optIns.length)} agents opted in. ${speakers.length === 2 ? `The ${nameList(speakers)} have the highest priority and speak at once` : `The ${speakers[0].name} has the highest priority`}${waiting ? `; ${waiting === 1 ? 'one waits' : `${countWord(waiting).toLowerCase()} wait`} for the next turn` : ''}.`
+          d = { speakers, by: 'self', reason, optIns: list }
+        }
+      } else if (strategy === 'moderator') {
+        const candidates = roster.filter((a) => workOf(a))
+        if (!candidates.length) d = nobody('moderator', 'Nobody had anything to work on')
+        else if (candidates.length === 1) d = { speakers: candidates, by: 'moderator', reason: `Only the ${candidates[0].name} has anything to work on (${workOf(candidates[0])}), so the Moderator did not need to choose.` }
+        // The Moderator's call would leave none for the speaker: the bids decide.
+        else if (S.budget - S.calls - S.reserved <= 2) d = byBids('Calls are nearly spent, so the Moderator stepped aside')
+        else {
+          const moderation = {
+            pattern: 'swarm', candidates: candidates.map(info), last: last[0] ? info(last[0]) : null,
+            mentioned: candidates.find(mentionOf)?.role || null, board: cur, revise: reviseRequested,
+            spoke: Object.fromEntries(roster.map((a) => [a.role, spoke.get(a.id)])),
+          }
+          const task = `Choose who speaks next in this swarm. The candidates, with what each has to work on:\n${candidates.map((a) => `- ${a.id} (${a.name}): ${workOf(a)}`).join('\n')}\nPick the one whose turn moves the team toward a checked answer fastest.`
+          const { pick, reason, raw } = await moderate(M, { candidates, task, moderation, inputs: S.outputs.slice(-3) })
+          d = pick
+            ? { speakers: [pick], by: 'moderator', reason: reason || `The Moderator gave the floor to the ${pick.name}.` }
+            : byBids(`The Moderator's pick${raw ? ` ("${raw}")` : ''} could not be used`)
+        }
+      } else if (strategy === 'handoff') {
+        const prev = last[0]
+        const named = prev && nextPick ? namedAgent(nextPick, roster) : null
+        // A Critic with no draft to review would have nothing to say.
+        const usable = named && named !== prev && !(named.role === 'critic' && draftSeq <= reviewedSeq)
+        if (usable) d = { speakers: [named], by: 'handoff', reason: `The ${prev.name} handed the floor to the ${named.name}.` }
+        else {
+          const why = !prev ? 'Nobody has the floor yet'
+            : !nextPick ? `The ${prev.name} did not name anyone`
+              : !named ? `The ${prev.name} named "${asString(nextPick, 30)}", who is not on the team`
+                : named === prev ? `The ${prev.name} named itself`
+                  : `The ${prev.name} named the Critic, but there is no new draft to review`
+          d = byBids(why)
+        }
+      } else {
+        d = byBids()
+      }
+
+      if (d.done) {
+        markFinal(latestDraft(), d.done)
+        return
+      }
+      const speakers = d.speakers
+      emitTurn({ strategy, speakers, by: d.by, reason: d.reason, bids: d.bids || [], optIns: d.optIns || null })
+      for (const sp of speakers) {
+        for (const x of ds) if (mentionsAgent(x.content, sp)) S.consumedMentions.add(`${x.id}:${sp.id}`)
+        if (d.by === 'moderator' && M) flow('moderator', sp.id)
+        if (last[0]) flow(last[0].id, sp.id)
+        seenAt.set(sp.id, cur)
+      }
 
       const taskByRole = {
         researcher: 'Add the facts the team is missing, and answer any open questions you can. Flag what needs checking.',
@@ -807,37 +1141,54 @@ export function createSwarmRun(opts) {
         critic: 'Review the latest draft against the goal, the facts and the humans’ constraints.',
       }
       const recent = S.outputs.slice(-3)
-      const out = await runAgent(speaker, {
-        nodeId: speaker.id,
-        task: taskByRole[speaker.role],
-        inputs: speaker.role === 'critic' ? S.outputs.filter((o) => o.agent.role === 'synthesizer').slice(-1) : recent,
-        maxTokens: speaker.role === 'synthesizer' ? 700 : 420,
-        scriptedCtx: { allowRevise: !revisedOnce, reviewedBefore: revisedOnce, turn },
-      })
-      spoke.set(speaker.id, spoke.get(speaker.id) + 1)
+      const reviewed = S.outputs.filter((o) => o.agent.role === 'synthesizer').slice(-1)
+      const revising = reviseRequested
+      const runOne = (sp) => {
+        const others = roster.filter((x) => x !== sp)
+        const handLine = strategy === 'handoff' ? ` End with one line "NEXT: <role>" naming the teammate who should speak next, one of: ${others.map((x) => x.role).join(', ')}. Never yourself.` : ''
+        return runAgent(sp, {
+          nodeId: sp.id,
+          task: taskByRole[sp.role] + handLine,
+          inputs: sp.role === 'critic' ? reviewed : recent,
+          maxTokens: sp.role === 'synthesizer' ? 700 : 420,
+          scriptedCtx: {
+            allowRevise: !revisedOnce, reviewedBefore: revisedOnce, turn, spokeBefore: spoke.get(sp.id) > 0,
+            revising: sp.role === 'synthesizer' && revising, handoff: strategy === 'handoff' ? others.map(info) : null,
+          },
+        })
+      }
+      // Self-selected speakers run at once; every other strategy has one.
+      const outs = speakers.length === 1 ? [await runOne(speakers[0])] : await allBranches(speakers.map(runOne))
       turn++
-      last = speaker
-
-      if (speaker.role === 'synthesizer') {
-        draftSeq++
-        reviseRequested = false
-        S.board = setText(S.board, 'draft', out.prose, now())
-        emitBoard()
-      } else if (speaker.role === 'critic') {
-        reviewedSeq = draftSeq
-        if (/APPROVE/i.test(out.control?.verdict || '')) {
-          const draft = [...S.outputs].reverse().find((o) => o.agent.role === 'synthesizer')
-          markFinal(draft, 'The Critic approved the Synthesizer’s draft, so the swarm converged.')
-          return
+      last = speakers
+      const after = counts(S.board)
+      let approved = false
+      speakers.forEach((sp, i) => {
+        const out = outs[i]
+        spoke.set(sp.id, spoke.get(sp.id) + 1)
+        afterAt.set(sp.id, after)
+        if (sp.role === 'synthesizer') {
+          draftSeq++
+          draftAt = cur
+          reviseRequested = false
+          S.board = setText(S.board, 'draft', out.prose, now())
+          emitBoard()
+        } else if (sp.role === 'critic') {
+          reviewedSeq = draftSeq
+          if (/APPROVE/i.test(out.control?.verdict || '')) approved = true
+          else { reviseRequested = true; revisedOnce = true }
         }
-        reviseRequested = true
-        revisedOnce = true
+        if (strategy === 'handoff') nextPick = nextLineOf(out)
+      })
+      if (approved) {
+        markFinal(latestDraft(), 'The Critic approved the Synthesizer’s draft, so the swarm converged.')
+        return
       }
 
       if (S.loopCount >= 2 && !S.loopEscalated) {
         S.loopEscalated = true
-        const d = await escalate('loop', 'The swarm is starting to repeat itself.', 'wrap_up')
-        if (d !== 'continue') throw new WrapUp()
+        const esc = await escalate('loop', 'The swarm is starting to repeat itself.', 'wrap_up')
+        if (esc !== 'continue') throw new WrapUp()
       }
     }
   }

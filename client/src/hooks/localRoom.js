@@ -1095,7 +1095,9 @@ export function openLocalRoom({
       // (and is hosted) in the forker's own browser — not the original host's.
       if (!session) throw new Error('Not connected to the room yet.')
       const pattern = payload?.pattern || null
-      const config = pattern ? mergeConfig(session.config, { crew: 'team', pattern }, session.provider) : session.config
+      // The fork can bring its own turn-taking; clampConfig drops one the pattern does not offer.
+      const turnTaking = typeof payload?.turnTaking === 'string' ? payload.turnTaking : null
+      const config = pattern ? mergeConfig(session.config, { crew: 'team', pattern, ...(turnTaking ? { turnTaking } : {}) }, session.provider) : session.config
       forked = createLocalRoom({
         name: pattern ? `${session.name} (${patternName(pattern)})` : `${session.name} (fork)`,
         mode: session.mode, provider: session.provider, model: session.model,
@@ -1141,7 +1143,7 @@ export function openLocalRoom({
       }
       case 'fork': {
         if (x.pattern != null && !PATTERN_ORDER.includes(x.pattern)) throw new Error('Pick one of the nine architectures to fork with.')
-        return dispatchAction('fork', { pattern: x.pattern || null })
+        return dispatchAction('fork', { pattern: x.pattern || null, ...(typeof x.turnTaking === 'string' ? { turnTaking: x.turnTaking } : {}) })
       }
       case 'pin': {
         if (!BOARD_KINDS.includes(x.kind)) throw new Error('Pick a board section to pin to.')

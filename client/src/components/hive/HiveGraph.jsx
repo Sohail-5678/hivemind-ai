@@ -4,7 +4,7 @@ import { ROLES } from '@shared/swarm/roles.js'
 import { layoutGraph, edgeFor, NODE_R } from './graphLayout'
 import { plannedGraph } from './roster'
 import { useReducedMotion } from './hooks'
-import { NODE_STATUS, OUTCOME, LIVE_AGENT, boardItemCount, clip, clock, glyph, nodesOf, patternId, plural, roleName, tail, teamOf } from './format'
+import { NODE_STATUS, OUTCOME, LIVE_AGENT, boardItemCount, clip, clock, glyph, nodesOf, patternId, plural, roleName, tail, teamOf, turnTakingName, turnTakingOf } from './format'
 
 const R = NODE_R
 const PULSE_MS = 900
@@ -69,7 +69,10 @@ function bidArc(score) {
   return `M${p(a0)} A${r},${r} 0 ${k > 0.5 ? 1 : 0} 1 ${p(a1)}`
 }
 
-function hubText(pattern, swarm, blackboard, planned) {
+// How a current speaker got the floor under a strategy that does not bid.
+const FLOOR_SUB = { order: 'next in order', moderator: 'Moderator\u2019s pick', handoff: 'handed the floor', self: 'opted in' }
+
+function hubText(pattern, swarm, blackboard, planned, config, provider) {
   if (pattern === 'swarm') {
     const n = boardItemCount(blackboard)
     return { label: 'Board', value: planned ? 'shared' : plural(n, 'note') }
@@ -77,7 +80,13 @@ function hubText(pattern, swarm, blackboard, planned) {
   if (pattern === 'debate') {
     const vote = planned ? null : swarm?.vote
     const winner = vote?.winner ? (vote.options || []).find((o) => o.id === vote.winner) : null
-    return { label: vote ? 'Vote' : 'Debate', value: vote?.open ? 'open' : winner ? winner.by || 'decided' : 'round robin' }
+    if (vote) return { label: 'Vote', value: vote.open ? 'open' : winner ? winner.by || 'decided' : '' }
+    // The hub fits about twelve characters at 1:1, so Priority bids shortens to
+    // bids. The strategy is optional: on a small graph it is left out rather
+    // than cut, since the panel names it too.
+    const id = turnTakingOf(planned ? null : swarm, config, provider)
+    const strategy = id === 'auction' ? 'bids' : turnTakingName(id).toLowerCase()
+    return { label: 'Debate', value: strategy, optional: true }
   }
   return { label: 'Team', value: '' }
 }
@@ -89,7 +98,7 @@ export function HiveGraph({ swarm, blackboard, config, provider = 'simulated', o
   const liveNodes = nodesOf(swarm)
   const planned = preview || !liveNodes.length
   const starting = !preview && swarm?.status === 'running' && !liveNodes.length
-  const configKey = `${patternId(config)}:${config?.width}:${config?.rounds}:${provider}`
+  const configKey = `${patternId(config)}:${config?.width}:${config?.rounds}:${config?.turnTaking}:${provider}`
 
   // swarm.graph keeps its identity while tokens stream, so this only re-lays
   // out when the graph itself changes.
@@ -145,12 +154,20 @@ export function HiveGraph({ swarm, blackboard, config, provider = 'simulated', o
   const bids = useMemo(() => {
     if (!running || layout.layout !== 'ring' || !Array.isArray(swarm?.bids?.bids)) return null
     const list = swarm.bids.bids.filter((b) => b && b.agentId)
+    if (!list.length) return null
     return { top: list[0]?.agentId || null, byId: Object.fromEntries(list.map((b) => [b.agentId, Number(b.score) || 0])) }
   }, [running, layout.layout, swarm?.bids])
+  // Turns decided without bids (order, Moderator, handoff, opting in) still
+  // say who has the floor.
+  const floor = useMemo(() => {
+    if (!running || bids || layout.layout !== 'ring' || !Array.isArray(swarm?.turn?.speakers)) return null
+    const sub = FLOOR_SUB[swarm.turn.by]
+    return sub ? { sub, ids: new Set(swarm.turn.speakers) } : null
+  }, [running, bids, layout.layout, swarm?.turn])
 
   const liveAgents = planned ? [] : teamOf(swarm).filter((a) => LIVE_AGENT.has(a.status))
   const liveNames = liveAgents.map((a) => a.name).join(', ')
-  const hub = layout.hub ? hubText(pattern, swarm, blackboard, planned) : null
+  const hub = layout.hub ? hubText(pattern, swarm, blackboard, planned, config, provider) : null
   const maxWidth = Math.round(layout.width * MAX_SCALE)
 
   // The SVG always fits its well (no sideways scroll), so on a narrow screen it
@@ -179,6 +196,8 @@ export function HiveGraph({ swarm, blackboard, config, provider = 'simulated', o
   const labelW = 6.3 * (fs.label / BASE_FS.label)
   const subW = 5.6 * (fs.sub / BASE_FS.sub)
   const hubK = fs.hub / BASE_FS.hub
+  const hubChars = Math.max(5, Math.floor(12 * BASE_FS.hubValue / fs.hubValue))
+  const hubValue = !hub?.value || (hub.optional && hub.value.length > hubChars) ? '' : clip(hub.value, hubChars)
 
   const agentObj = (n, primary) => team[n.agentId] || (n.role ? { id: n.agentId, role: n.role, name: primary, glyph: n.glyph, description: ROLES[n.role]?.description || '' } : null)
 
@@ -219,8 +238,8 @@ export function HiveGraph({ swarm, blackboard, config, provider = 'simulated', o
             <g className="hv-hub" transform={`translate(${layout.hub.x},${layout.hub.y})`} aria-hidden="true">
               <circle r={layout.hub.r + 3} className="hv-hub-rim" />
               <circle r={layout.hub.r} className="hv-hub-well" />
-              <text className="hv-hub-label" y={(hub.value ? -3 : 3) * hubK} textAnchor="middle">{hub.label}</text>
-              {hub.value && <text className="hv-hub-value" y={10 * hubK} textAnchor="middle">{clip(hub.value, Math.max(5, Math.floor(12 * BASE_FS.hubValue / fs.hubValue)))}</text>}
+              <text className="hv-hub-label" y={(hubValue ? -3 : 3) * hubK} textAnchor="middle">{hub.label}</text>
+              {hubValue && <text className="hv-hub-value" y={10 * hubK} textAnchor="middle">{hubValue}</text>}
             </g>
           )}
 
@@ -239,7 +258,8 @@ export function HiveGraph({ swarm, blackboard, config, provider = 'simulated', o
             const { primary, secondary, full } = labelsFor(n, agent)
             const g = agent?.glyph || n.glyph || ROLES[n.role]?.glyph
             const score = bids?.byId[n.agentId]
-            const sub = showSub ? (score !== undefined ? `bid ${score.toFixed(2)}` : secondary) : ''
+            const onFloor = floor?.ids.has(n.agentId)
+            const sub = showSub ? (score !== undefined ? `bid ${score.toFixed(2)}` : onFloor ? floor.sub : secondary) : ''
             const target = onSelect ? agentObj(n, primary) : null
             const l0 = labelPos(n.labelAt, 0, fs.k)
             const l1 = labelPos(n.labelAt, 1, fs.k)

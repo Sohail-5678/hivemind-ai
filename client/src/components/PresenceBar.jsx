@@ -1,7 +1,8 @@
 import React from 'react'
 import { HUMAN_COLORS } from '@shared/palette.js'
-import { ROLES } from '@shared/swarm/roles.js'
 import { PATTERNS } from '@shared/swarm/patterns.js'
+import { plannedTeam } from './hive/roster'
+import { turnTakingOf } from './hive/format'
 
 const MAX_HUMANS = 5
 const MAX_AGENTS = 4
@@ -57,14 +58,11 @@ export function AgentAvatar({ glyph, live = false, small = false, title }) {
 const isLive = (a) => a.status === 'speaking' || a.status === 'thinking'
 
 // The team as the room knows it: the live roster once a run has started,
-// otherwise the planned team for the chosen architecture.
+// otherwise the planned team for the chosen architecture (with the Moderator
+// when it runs the floor).
 function teamOf(config, swarm) {
   if (swarm?.order?.length) return swarm.order.map((id) => swarm.team?.[id]).filter(Boolean)
-  const pattern = PATTERNS[config?.pattern] || PATTERNS.auto
-  return pattern.team.map((role) => {
-    const r = ROLES[role] || ROLES.worker
-    return { id: role, role, name: r.name, glyph: r.glyph, color: r.color, status: 'idle' }
-  })
+  return plannedTeam(config).map((a) => ({ ...a, status: 'idle' }))
 }
 
 function roomType(mode, team) {
@@ -74,12 +72,15 @@ function roomType(mode, team) {
 }
 
 // The last run's view only describes the room while it runs, or while the
-// room is still set to the architecture that run used. After someone switches
-// the architecture, the planned team for the new one is the truth.
+// room is still set to the architecture (and turn-taking) that run used. After
+// someone switches either, the planned team for the next run is the truth: a
+// Moderator joins or leaves with its strategy (HivePanel previews the same way).
 function currentRun(config, swarm) {
   if (!swarm) return null
-  if (swarm.status === 'running' || !config?.pattern || config.pattern === swarm.requested) return swarm
-  return null
+  if (swarm.status === 'running' || !config?.pattern) return swarm
+  if (config.pattern !== swarm.requested) return null
+  if (config.pattern !== 'auto' && turnTakingOf(swarm, config) !== turnTakingOf(null, config)) return null
+  return swarm
 }
 
 function patternLabel(config, run) {

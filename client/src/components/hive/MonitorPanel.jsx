@@ -1,7 +1,7 @@
 import React, { useRef } from 'react'
-import { PATTERNS, clampConfig } from '@shared/swarm/patterns.js'
+import { PATTERNS, TURN_TAKING, clampConfig } from '@shared/swarm/patterns.js'
 import { useNow } from './hooks'
-import { OUTCOME, clock, estimateFor, estimateText, explainFlag, patternId, patternName, plural, providerLabel, teamOf } from './format'
+import { OUTCOME, TURN_RULE, clock, estimateFor, estimateText, explainFlag, namesOf, patternId, patternName, plural, providerLabel, teamOf, turnLabel, turnTakingOf } from './format'
 
 const AXES = [['control', 'Control'], ['execution', 'Execution'], ['collaboration', 'Collaboration'], ['timing', 'Timing']]
 
@@ -41,6 +41,7 @@ export function MonitorPanel({ swarm, config, status, provider = 'simulated' }) 
   const pattern = swarm ? swarm.pattern || swarm.requested || 'auto' : patternId(config)
   const def = PATTERNS[pattern] || PATTERNS.auto
   const elapsed = useElapsed(swarm)
+  const strategy = turnTakingOf(swarm, config, provider)
 
   if (!swarm) {
     const est = estimateFor(pattern, provider, config)
@@ -52,6 +53,7 @@ export function MonitorPanel({ swarm, config, status, provider = 'simulated' }) 
           <div className="hv-tile"><dt>Budget</dt><dd>{plural(cfg.maxCalls, 'call')}</dd></div>
           <div className="hv-tile"><dt>Estimate</dt><dd>{estimateText(est)}</dd></div>
         </dl>
+        {strategy && <TurnTaking strategy={strategy} />}
         <Axes def={def} />
         <p className="hv-empty">{`No run yet. Estimates are for the ${providerLabel(provider)}.`}</p>
       </div>
@@ -67,6 +69,9 @@ export function MonitorPanel({ swarm, config, status, provider = 'simulated' }) 
   const running = swarm.status === 'running'
   const bids = Array.isArray(swarm.bids?.bids) ? swarm.bids.bids.filter((b) => b && b.agentId) : []
   const topScore = Math.max(1, ...bids.map((b) => Number(b.score) || 0))
+  const turn = swarm.turn || null
+  const optIns = Array.isArray(turn?.optIns) ? turn.optIns.filter((o) => o && o.agentId) : []
+  const speaking = new Set(Array.isArray(turn?.speakers) ? turn.speakers : [])
 
   return (
     <div className="hv-monitor">
@@ -99,7 +104,7 @@ export function MonitorPanel({ swarm, config, status, provider = 'simulated' }) 
         {flags.length ? (
           <ul className="hv-flags">
             {flags.map((f) => {
-              const x = explainFlag(f, { team, pattern })
+              const x = explainFlag(f, { team, pattern, turnTaking: strategy })
               return (
                 <li key={f} className="hv-flag">
                   <span className="hv-flag-mark" aria-hidden="true" />
@@ -117,6 +122,27 @@ export function MonitorPanel({ swarm, config, status, provider = 'simulated' }) 
         <section className="hv-msec hv-architect">
           <div className="hv-msec-head"><h3 className="hv-sec-title">Architect’s choice</h3></div>
           <p><strong>{patternName(swarm.architect.pattern)}</strong>{swarm.architect.reason ? `: ${swarm.architect.reason}` : ''}</p>
+        </section>
+      )}
+
+      {strategy && <TurnTaking strategy={strategy} turn={turn} team={team} />}
+
+      {optIns.length > 0 && (
+        <section className="hv-msec">
+          <div className="hv-msec-head">
+            <h3 className="hv-sec-title">{`Opted in, turn ${Number(turn.round) || 1}`}</h3>
+            <span className="hv-sec-count">{optIns.length}</span>
+          </div>
+          <ol className="hv-bids">
+            {optIns.map((o) => (
+              <li key={o.agentId} className={`hv-bid${speaking.has(o.agentId) ? ' is-top' : ''}`}>
+                <span className="hv-bid-name">{team[o.agentId]?.name || o.agentId}</span>
+                <span className="hv-bid-score">{speaking.has(o.agentId) ? 'speaks' : 'waits'}</span>
+                {o.reason && <span className="hv-bid-why">{o.reason}</span>}
+              </li>
+            ))}
+          </ol>
+          <p className="hv-meter-note">Agents opt in when the board gives them something to do. Up to two speak at once, in a fixed priority, with three turns each unless a person calls on them.</p>
         </section>
       )}
 
@@ -145,6 +171,30 @@ export function MonitorPanel({ swarm, config, status, provider = 'simulated' }) 
       <Axes def={def} />
       {status === 'paused' && <p className="hv-empty">The room is paused. Resume continues the goal with a fresh run.</p>}
     </div>
+  )
+}
+
+// The room's turn-taking strategy and, once a run has turns, the latest one:
+// who got the floor, by which rule, and why (engine.js emitTurn).
+function TurnTaking({ strategy, turn = null, team = {} }) {
+  const t = TURN_TAKING[strategy]
+  if (!t) return null
+  const speakers = Array.isArray(turn?.speakers) ? turn.speakers : []
+  const rule = TURN_RULE[turn?.by]
+  return (
+    <section className="hv-msec hv-architect">
+      <div className="hv-msec-head">
+        <h3 className="hv-sec-title">Turn-taking</h3>
+        <span className="hv-sec-count">{t.name}</span>
+      </div>
+      <p>{t.summary}</p>
+      {speakers.length > 0 && (
+        <p>
+          <strong>{`${turnLabel(turn)}: ${namesOf(speakers, team)}`}</strong>
+          {`${rule ? ` (${rule})` : ''}${turn.reason ? `. ${turn.reason}` : '.'}`}
+        </p>
+      )}
+    </section>
   )
 }
 

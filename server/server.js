@@ -9,7 +9,8 @@ import { createSession, getSession, getSessionByCode, getEvents, addEvent, forkS
 import { attachWebSocket, broadcast, participantsOf } from './websocket.js'
 import {
   startRun, pauseAgent, resumeAgent, redirectAgent, stopAgent, agentStatus, isRunning, setSessionKey,
-  getSwarmSnapshot, sanitizeConfig, mergeConfig, crewLabel, pinBoard, castVote, decideEscalation, setConfig, logEvent,
+  getSwarmSnapshot, getBoardSnapshot, sanitizeConfig, mergeConfig, crewLabel, pinBoard, castVote, decideEscalation, setConfig, logEvent,
+  recoverInterruptedViews, flushTeamSaves,
 } from './agent.js'
 import { DEFAULT_HUMAN_COLOR } from './palette.js'
 import { PATTERNS, PATTERN_ORDER } from './swarm/patterns.js'
@@ -175,9 +176,11 @@ app.post('/api/sessions/:id/actions', (req, res) => {
     if (pattern && !PATTERN_ORDER.includes(pattern)) return res.status(400).json({ error: `Unknown architecture "${pattern.slice(0, 40)}".` })
     // A fork is a new session: it counts against the same limit as creating one.
     if (rateLimited(`sess:${ip}`, RATE_LIMIT.maxSessions)) return res.status(429).json({ error: 'Too many sessions created. Wait a minute and try again.' })
-    const config = pattern ? mergeConfig(session.config, { crew: 'team', pattern }, session.provider) : null
+    // The fork can bring its own turn-taking; clampConfig drops one the pattern does not offer.
+    const turnTaking = typeof req.body?.turnTaking === 'string' ? req.body.turnTaking.slice(0, 40) : null
+    const config = pattern ? mergeConfig(session.config, { crew: 'team', pattern, ...(turnTaking ? { turnTaking } : {}) }, session.provider) : null
     const name = cleanText(req.body?.name, 80) || (pattern ? `${session.name} (${PATTERNS[pattern].name})` : null)
-    const fork = forkSession(session.id, { name, upToEventId, config, blackboard: getSwarmSnapshot(session.id).blackboard })
+    const fork = forkSession(session.id, { name, upToEventId, config, blackboard: getBoardSnapshot(session.id) })
     addEvent(fork.id, { type: 'system', content: `Forked from "${session.name}" by ${user.name}${pattern ? ` to try ${crewLabel(config)}` : ''}.` })
     logEvent(session.id, { type: 'fork', author: user, content: fork.name, meta: { forkedSessionId: fork.id, upToEventId, ...(pattern ? { pattern } : {}) } })
     broadcast(session.id, { type: 'session_forked', sessionId: session.id, newSession: fork, by: user })
@@ -281,5 +284,19 @@ function listen(port, attemptsLeft) {
 
 process.on('uncaughtException', (err) => console.error('Uncaught exception (server kept alive):', err.message))
 process.on('unhandledRejection', (err) => console.error('Unhandled rejection (server kept alive):', err?.message || err))
+
+// Graceful shutdown (Ctrl+C, a host's stop signal): write the boards and team
+// views still waiting on their coalesced save, then exit. A team that was
+// working is closed as lost on the next boot, like after a crash.
+function shutdown() {
+  try { flushTeamSaves() } catch (err) { console.error('Shutdown save failed:', err?.message || err) }
+  process.exit(0)
+}
+process.once('SIGINT', shutdown)
+process.once('SIGTERM', shutdown)
+
+// Before the first joiner can ask for a snapshot.
+const recovered = recoverInterruptedViews()
+if (recovered) console.log(`Closed ${recovered} team run${recovered === 1 ? '' : 's'} cut off by the last shutdown.`)
 
 listen(Number(process.env.PORT) || 3000, 10)

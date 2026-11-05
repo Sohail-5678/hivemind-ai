@@ -41,19 +41,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, id);
 `)
 
-// v2 columns: the room's crew config and its shared blackboard (both JSON).
-// ADD COLUMN keeps database files created by v1 working without a rebuild.
+// Columns added after v1, all JSON: the room's crew config, its shared
+// blackboard and the last team view (graph, roster, vote, monitor, final-answer
+// pointer), so a late joiner still gets the team after a restart.
+// ADD COLUMN keeps older database files working without a rebuild.
 const sessionColumns = new Set(db.prepare(`PRAGMA table_info(sessions)`).all().map((c) => c.name))
-for (const column of ['config', 'blackboard']) {
+for (const column of ['config', 'blackboard', 'swarm_view']) {
   if (!sessionColumns.has(column)) db.exec(`ALTER TABLE sessions ADD COLUMN ${column} TEXT`)
 }
 
 // A restart orphans any in-flight run — reset stale statuses so sessions
-// aren't reported as running with no live run behind them.
+// aren't reported as running with no live run behind them. A team view left
+// running is closed at boot by agent.js (recoverInterruptedViews).
 db.exec(`UPDATE sessions SET status = 'idle' WHERE status = 'running'`)
 
-// Session reads skip the blackboard: it can be several KB and is only needed
-// by snapshots, which load it on their own (getSessionBlackboard).
+// Session reads skip the blackboard and the team view: each can be several KB
+// and only snapshots need them, which load them on their own.
 const SESSION_COLUMNS = 'id, name, mode, status, provider, model, room_code, forked_from, created_at, config'
 
 // Room codes avoid ambiguous characters (0/O, 1/I/L).
@@ -173,6 +176,46 @@ export function updateSessionBlackboard(id, board) {
   db.prepare(`UPDATE sessions SET blackboard = ? WHERE id = ?`).run(isPlainObject(board) ? JSON.stringify(board) : null, id)
 }
 
+// The room's last team view, compacted (swarm/view.js). null until a team ran.
+// It lives on the session row, so it goes wherever the session goes.
+export function getSessionSwarmView(id) {
+  const row = db.prepare(`SELECT swarm_view FROM sessions WHERE id = ?`).get(id)
+  const view = parseJSON(row?.swarm_view)
+  return isPlainObject(view) ? view : null
+}
+
+// One write for whatever changed during a run: the board, the view or both.
+// A key left undefined keeps its stored value.
+export function updateSessionTeamState(id, { blackboard, swarm } = {}) {
+  const sets = []
+  const values = []
+  if (blackboard !== undefined) { sets.push('blackboard = ?'); values.push(isPlainObject(blackboard) ? JSON.stringify(blackboard) : null) }
+  if (swarm !== undefined) { sets.push('swarm_view = ?'); values.push(isPlainObject(swarm) ? JSON.stringify(swarm) : null) }
+  if (!sets.length) return
+  db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values, id)
+}
+
+// Team views a dead process left marked running. LIKE only narrows the scan
+// (node statuses use the same word); the parsed top-level status decides.
+export function getRunningSwarmViews() {
+  return db.prepare(`SELECT id, swarm_view FROM sessions WHERE swarm_view LIKE '%"status":"running"%'`).all()
+    .map((row) => ({ id: row.id, swarm: parseJSON(row.swarm_view) }))
+    .filter((row) => isPlainObject(row.swarm) && row.swarm.status === 'running')
+}
+
+// Runs `fn` in one transaction: every write in it lands, or none does.
+export function transaction(fn) {
+  db.exec('BEGIN')
+  try {
+    const result = fn()
+    db.exec('COMMIT')
+    return result
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
+}
+
 export function addEvent(sessionId, { type, author = null, content = null, meta = null }) {
   const extra = authorExtraOf(author)
   const stored = extra ? { ...(isPlainObject(meta) ? meta : {}), authorExtra: extra } : meta
@@ -227,7 +270,8 @@ export function getEventsOfType(sessionId, types, { limit = 50, sinceId = 0, bef
 // Fork: a new session that copies the timeline (optionally up to an event id)
 // and the blackboard. `config` overrides the source's crew config (fork with
 // another architecture); `blackboard` overrides the stored copy, so a fork taken
-// mid-run gets the live board rather than the last debounced save.
+// mid-run gets the live board rather than the last debounced save. The team
+// view is not copied: a fork has not run yet, so it starts with none.
 export function forkSession(sourceId, { name, upToEventId = null, provider, model, config = null, blackboard } = {}) {
   const source = getSession(sourceId)
   if (!source) return null
@@ -240,8 +284,7 @@ export function forkSession(sourceId, { name, upToEventId = null, provider, mode
   )
   // One transaction: a long timeline copies in a single write, and a failure
   // never leaves a half-copied fork behind.
-  db.exec('BEGIN')
-  try {
+  return transaction(() => {
     const fork = createSession({
       name: name || `${source.name} (fork)`,
       mode: source.mode,
@@ -254,12 +297,8 @@ export function forkSession(sourceId, { name, upToEventId = null, provider, mode
     for (const row of rows) {
       insert.run(fork.id, row.type, row.author_id, row.author_name, row.author_color, row.content, row.meta, row.created_at)
     }
-    db.exec('COMMIT')
     return fork
-  } catch (err) {
-    db.exec('ROLLBACK')
-    throw err
-  }
+  })
 }
 
 export default db

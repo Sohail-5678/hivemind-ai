@@ -220,8 +220,9 @@ async function main() {
     let from = gus.inbox.length
     const switched = await post(teamActions, { action: 'set_config', config: { crew: 'team', pattern: 'debate' }, user: fayUser })
     const configMsg = await waitAfter(gus, from, (m) => m.type === 'session_config', 'config broadcast')
-    await waitAfter(gus, from, (m) => m.type === 'timeline_event' && m.event?.type === 'config', 'config timeline event')
+    const configLine = await waitAfter(gus, from, (m) => m.type === 'timeline_event' && m.event?.type === 'config', 'config timeline event')
     check('set_config switches the pattern while idle', switched.status === 200 && switched.data.session.config.pattern === 'debate' && configMsg.config.pattern === 'debate' && configMsg.by?.name === 'Fay')
+    check('the config line names the turn-taking, in the static runtime\'s words', configLine.event.content === 'Switched to Peer-to-peer team with round robin turn-taking')
 
     // Debate: the team opens a vote and waits for the two humans in the room.
     from = fay.inbox.length
@@ -277,13 +278,15 @@ async function main() {
     const lateEscalation = await post(teamActions, { action: 'escalation', escalationId: 'esc_none', decision: 'continue', user: fayUser })
     check('vote and escalation with nothing open return ok:false gracefully', lateVote.status === 200 && lateVote.data?.ok === false && lateEscalation.status === 200 && lateEscalation.data?.ok === false)
 
-    const forked = await post(teamActions, { action: 'fork', pattern: 'swarm', user: fayUser })
+    const forked = await post(teamActions, { action: 'fork', pattern: 'swarm', turnTaking: 'self_select', user: fayUser })
     const teamFork = forked.data?.session
     check('fork with a pattern creates a team fork', forked.status === 200 && teamFork?.config.crew === 'team' && teamFork.config.pattern === 'swarm' && teamFork.forkedFrom === team.id)
+    check('the fork keeps the turn-taking it was given', teamFork?.config.turnTaking === 'self_select')
     const forkLine = await waitFor(fay, (m) => m.type === 'timeline_event' && m.event?.type === 'fork', 'fork line reaches the room')
     check('the fork line reaches the source room live', forkLine.event.meta?.pattern === 'swarm' && forkLine.event.meta.forkedSessionId === teamFork.id)
     const teamForkState = await (await fetch(`${BASE}/api/sessions/${teamFork.id}`)).json()
     check('the fork carries the blackboard and the timeline', teamForkState.blackboard?.constraints.some((c) => c.text === 'Keep it under one page') && teamForkState.events.some((e) => e.type === 'pin'))
+    check('a fork starts with no team view of its own', teamForkState.swarm === null)
     const badFork = await post(teamActions, { action: 'fork', pattern: 'galaxy-brain', user: fayUser })
     check('fork with an unknown pattern is rejected', badFork.status === 400)
     fay.ws.close()

@@ -111,6 +111,12 @@ export const ROLES = {
     skills: [{ id: 'balance', name: 'Balance', description: 'Finds the practical middle path.', tags: ['debate'] }],
     system: 'You are the Pragmatist, one of three equal peers in a debate. You look for the option that can ship soonest with acceptable risk.',
   },
+  moderator: {
+    name: 'Moderator', glyph: '◈', color: '#9BA8AB',
+    description: 'Runs the floor in a group chat of agents: reads the conversation and picks who speaks next, with a reason. Never answers the task itself.',
+    skills: [{ id: 'moderate', name: 'Moderate turns', description: 'Chooses the next speaker from the agents who have something to add, and says why.', tags: ['turn-taking', 'group chat'] }],
+    system: 'You are the Moderator of a group chat between agents. You only choose who speaks next and say why in one short sentence. You never answer the task, take a side, or write any part of the answer yourself.',
+  },
   monitor: {
     name: 'Monitor', glyph: '◉', color: '#7D8C92',
     description: 'Deterministic observer (not an LLM): watches budget, time, repeated output and flagged inputs, and escalates to the humans.',

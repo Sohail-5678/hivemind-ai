@@ -104,7 +104,7 @@
   height: 3px;
   margin: 0 10px;
   border-radius: 50%;
-  background: var(--steel-500);
+  background: var(--neutral);
   vertical-align: middle;
 }
 
@@ -180,8 +180,8 @@
 .provider-opt:focus-visible { box-shadow: var(--focus); }
 .provider-opt.is-checked:focus-visible { box-shadow: var(--neu-raised-sm), var(--focus); }
 .provider-opt:disabled { opacity: 0.45; cursor: not-allowed; }
-.provider-mark { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--steel-500); transition: background 160ms var(--ease), box-shadow 160ms var(--ease); }
-.provider-opt.is-checked .provider-mark { background: var(--agent); box-shadow: 0 0 8px var(--agent-ring); }
+.provider-mark { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--neutral); transition: background 160ms var(--ease), box-shadow 160ms var(--ease); }
+.provider-opt.is-checked .provider-mark { background: var(--agent-fill); box-shadow: 0 0 8px var(--agent-glow); }
 
 .provider-detail { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; padding: 0 4px; font-size: 13px; color: var(--text-3); }
 .provider-groq { display: flex; flex-direction: column; gap: 12px; }
@@ -274,7 +274,7 @@
 .ws-ring-orbit { stroke: var(--agent-ring); stroke-dasharray: 2 7; }
 .ws-ring-satellite { fill: var(--agent-bright); }
 .ws-orbit { transform-box: fill-box; transform-origin: center; animation: neu-spin 14s linear infinite; }
-.ws-ring-core { fill: var(--agent); transform-box: fill-box; transform-origin: center; animation: neu-pulse 2.4s var(--ease) infinite; }
+.ws-ring-core { fill: var(--agent-fill); transform-box: fill-box; transform-origin: center; animation: neu-pulse 2.4s var(--ease) infinite; }
 
 .ws-error { width: 100%; max-width: 560px; margin: clamp(16px, 6vh, 64px) auto 0; }
 .ws-error h2 { font-size: 1.17em; }
@@ -366,7 +366,7 @@
 .ws-tab.is-active { color: var(--text); background: var(--surface-hi); box-shadow: var(--neu-raised-sm); }
 .ws-tab:focus-visible { box-shadow: var(--focus); }
 .ws-tab.is-active:focus-visible { box-shadow: var(--neu-raised-sm), var(--focus); }
-.ws-tab-flag { width: 6px; height: 6px; border-radius: 50%; background: var(--human); }
+.ws-tab-flag { width: 6px; height: 6px; border-radius: 50%; background: var(--human-fill); }
 .ws-tab .dot { width: 6px; height: 6px; }
 
 /* ---------------------------------------------------------------- share bar */
@@ -428,9 +428,9 @@
   background: var(--well);
   box-shadow: var(--neu-inset-sm);
 }
-.relay-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--steel-500); }
+.relay-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--neutral); }
 .relay-chip.ok { color: var(--agent); }
-.relay-chip.ok .relay-dot { background: var(--agent); box-shadow: 0 0 8px var(--agent-ring); }
+.relay-chip.ok .relay-dot { background: var(--agent-fill); box-shadow: 0 0 8px var(--agent-glow); }
 .relay-chip.down { color: var(--danger); }
 .relay-chip.down .relay-dot { background: var(--danger); }
 .share-note { flex: 1 1 260px; min-width: 0; font-size: 12.5px; color: var(--text-3); }
@@ -581,7 +581,7 @@
   background: var(--surface);
   box-shadow: 1px 1px 2px var(--sh-dark), -1px -1px 2px var(--sh-light);
 }
-.composer-keys-sep { width: 3px; height: 3px; margin: 0 4px; border-radius: 50%; background: var(--steel-500); }
+.composer-keys-sep { width: 3px; height: 3px; margin: 0 4px; border-radius: 50%; background: var(--neutral); }
 .composer-count { margin-left: auto; color: var(--text-3); }
 .composer-count.at-limit { color: var(--danger); }
 
@@ -613,7 +613,7 @@
   line-height: 1.45;
   animation: ws-toast-in 280ms var(--ease) both;
 }
-.ws-toast-mark { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--agent); box-shadow: 0 0 8px var(--agent-ring); }
+.ws-toast-mark { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--agent-fill); box-shadow: 0 0 8px var(--agent-glow); }
 .notice-toast.is-progress .ws-toast-mark {
   width: 14px;
   height: 14px;
@@ -649,7 +649,7 @@
   transform-origin: left center;
   animation: ws-drain var(--ws-toast-ms, 4000ms) linear forwards;
 }
-.notice-toast.is-progress .ws-toast-bar { width: 32%; background: var(--agent); animation: ws-sweep 1.6s var(--ease) infinite; }
+.notice-toast.is-progress .ws-toast-bar { width: 32%; background: var(--agent-fill); animation: ws-sweep 1.6s var(--ease) infinite; }
 
 @keyframes ws-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes ws-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }

@@ -1,7 +1,7 @@
 // Small, pure helpers shared by the Hive components: plain-word labels for engine
 // states, durations, estimates and defensive readers for a view that can be
 // null, partial, or from an older run.
-import { PATTERNS, PATTERN_ORDER, PROVIDER_PROFILE, clampConfig, estimateCalls, estimateSeconds } from '@shared/swarm/patterns.js'
+import { PATTERNS, PATTERN_ORDER, PROVIDER_PROFILE, TURN_TAKING, clampConfig, estimateCalls, estimateSeconds, turnTakingFor } from '@shared/swarm/patterns.js'
 import { ROLES } from '@shared/swarm/roles.js'
 
 // Graph node states (engine.js nodeStatus + view.js swarm_done) and the
@@ -24,7 +24,7 @@ export const OUTCOME = {
   stopped: 'Stopped',
   redirected: 'Redirected',
   timeout: 'Timed out',
-  lost: 'Host left the room',
+  lost: 'Cut off before it finished',
   error: 'Stopped by an error',
 }
 
@@ -119,8 +119,45 @@ export function estimateText(est) {
   return `${plural(est.calls, 'call')}, ${aboutSeconds(est.seconds)}`
 }
 
+// Turn-taking ------------------------------------------------------------
+// How the floor was given on a turn (engine.js emitTurn `by`).
+export const TURN_RULE = {
+  bids: 'highest bid',
+  order: 'in order',
+  moderator: 'Moderator',
+  handoff: 'handoff',
+  self: 'opted in',
+}
+
+// The strategy a run follows (or the next run will), null for a pattern that
+// has no turns. A view from before strategies existed ran the old defaults.
+export function turnTakingOf(swarm, config, provider = 'simulated') {
+  if (swarm) {
+    const allowed = turnTakingFor(swarm.pattern || swarm.requested)
+    return allowed.includes(swarm.turnTaking) ? swarm.turnTaking : allowed[0] || null
+  }
+  const pattern = patternId(config)
+  return clampConfig(pattern, PROVIDER_PROFILE[provider] ? provider : 'simulated', config || {}).turnTaking
+}
+
+export function turnTakingName(id) {
+  return TURN_TAKING[id]?.name || ''
+}
+
+// "Critic", "Analyst and Interrogator"
+export function namesOf(ids, team = {}) {
+  const names = (Array.isArray(ids) ? ids : []).map((id) => team[id]?.name || roleName(id) || id)
+  return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+// "Turn 4", "Turn 4, round 2"
+export function turnLabel(turn) {
+  if (!turn) return ''
+  return `Turn ${Number(turn.round) || 1}${turn.debateRound ? `, round ${turn.debateRound}` : ''}`
+}
+
 // Monitor flags (engine.js beforeCall / afterCall) in plain words.
-export function explainFlag(flag, { team = {}, pattern } = {}) {
+export function explainFlag(flag, { team = {}, pattern, turnTaking = null } = {}) {
   if (flag === 'budget_80') {
     return {
       title: '80% of the call budget is used',
@@ -130,10 +167,12 @@ export function explainFlag(flag, { team = {}, pattern } = {}) {
   if (String(flag).startsWith('loop:')) {
     const id = String(flag).slice(5)
     const name = team[id]?.name || roleName(id) || id
+    // Mirrors engine.js loopConsequence.
+    const cost = turnTaking === 'self_select' ? ' It moves to the back of the queue when it opts in.' : turnTaking === 'auction' || !turnTaking ? ' Its bids are penalized.' : ''
     return {
       title: `${name} repeated itself`,
       body: pattern === 'swarm'
-        ? 'Its output was almost word for word the same as before, so its next bid is penalized. Two repeats trigger an escalation.'
+        ? `Its output was almost word for word the same as before.${cost} Two repeats make the Monitor ask the room.`
         : 'Its output was almost word for word the same as before. The Monitor noted it in the conversation.',
     }
   }

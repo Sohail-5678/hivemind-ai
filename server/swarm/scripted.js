@@ -105,9 +105,71 @@ export function scriptedJSON(kind, ctx) {
       ]
       return { angles: angles.slice(0, width) }
     }
+    case 'moderate':
+      return moderatorPick(ctx.moderation || {})
     default:
       return {}
   }
+}
+
+// The scripted Moderator's judgment: a human's call first, then what the
+// conversation needs. In a debate it lets a challenged peer answer and keeps
+// opposing views next to each other; in a swarm it follows the work (check a
+// new draft, revise, gather, probe, decide, write).
+function moderatorPick(m) {
+  const c = Array.isArray(m.candidates) ? m.candidates : []
+  if (!c.length) return { speaker: '', reason: 'Nobody has anything to add.' }
+  const has = (role) => c.find((x) => x.role === role)
+  const say = (x, reason) => ({ speaker: x.id, reason })
+  const called = m.mentioned && has(m.mentioned)
+  if (called) return say(called, `A human called on the ${called.name}.`)
+  if (m.pattern === 'debate') {
+    const answering = m.addressed && has(m.addressed)
+    if (answering && m.last) return say(answering, `The ${m.last.name} just challenged the ${answering.name}, so it answers next.`)
+    if (!m.last) {
+      const x = has('pragmatist') || c[0]
+      return say(x, `The ${x.name} opens with the middle path, so both sides have something concrete to test.`)
+    }
+    const contrast = { builder: ['skeptic', 'pragmatist'], skeptic: ['builder', 'pragmatist'], pragmatist: ['builder', 'skeptic'] }[m.last.role] || []
+    const x = contrast.map(has).find(Boolean) || c[0]
+    return say(x, `The ${x.name} holds the view furthest from the ${m.last.name}, which keeps the contrast sharp.`)
+  }
+  const board = m.board || {}
+  const rules = [
+    ['critic', 'There is a new draft nobody has checked yet.'],
+    m.revise && ['synthesizer', 'The Critic asked for a revision.'],
+    (board.facts || 0) < 3 && ['researcher', 'The board is still short on facts.'],
+    !m.spoke?.interrogator && ['interrogator', 'Nobody has probed the facts for gaps yet.'],
+    !board.decisions && ['analyst', 'There are facts on the board but no decisions.'],
+    ['synthesizer', 'The board has decisions to write up.'],
+    ['analyst', 'New facts may change the decisions.'],
+    ['researcher', 'There are open questions to answer.'],
+  ].filter(Boolean)
+  for (const [role, reason] of rules) {
+    const x = has(role)
+    if (x) return say(x, reason)
+  }
+  return say(c[0], `The ${c[0].name} has the most to add right now.`)
+}
+
+// Handoff: who each scripted agent passes the floor to. A debate peer hands
+// over to the view it disagrees with most; a swarm agent to the next step of
+// the work (the Interrogator hands back to the Researcher to answer it).
+function handoffPick(agent, ctx) {
+  const options = Array.isArray(ctx.handoff) ? ctx.handoff : []
+  if (!options.length) return null
+  const prefs = {
+    builder: ['skeptic', 'pragmatist'],
+    skeptic: ['builder', 'pragmatist'],
+    pragmatist: ['skeptic', 'builder'],
+    researcher: ctx.spokeBefore ? ['analyst', 'synthesizer'] : ['interrogator', 'analyst'],
+    interrogator: ['researcher', 'analyst'],
+    analyst: ['synthesizer'],
+    synthesizer: ['critic'],
+    critic: ['synthesizer'],
+  }[agent.role] || []
+  const pick = prefs.map((r) => options.find((o) => o.role === r)).find(Boolean) || options[0]
+  return pick.name
 }
 
 function textFor(agent, kind, ctx) {
@@ -116,7 +178,12 @@ function textFor(agent, kind, ctx) {
   const role = agent.role
   const focus = agent.focus ? ` (${agent.focus})` : ''
   const lead = ctx.fallback ? 'The language model didn’t respond in time, so this is the scripted stand-in.\n\n' : ''
+  const next = handoffPick(agent, ctx)
+  const handoff = next ? `\nNEXT: ${next}` : ''
+  return `${roleText(agent, kind, ctx, { topic, seed, role, focus, lead })}${handoff}`
+}
 
+function roleText(agent, kind, ctx, { topic, seed, role, focus, lead }) {
   if (kind === 'debate_turn') {
     const stance = {
       builder: `I'd go big on ${topic}: build the version people will talk about, then cut scope only where the data forces us.`,
@@ -124,7 +191,7 @@ function textFor(agent, kind, ctx) {
       pragmatist: `There's a middle path on ${topic}: ship the smallest version that tests the main bet in two weeks, then decide on the bigger build with real numbers.`,
     }[role] || `My view on ${topic} is to keep it simple.`
     let out = `${lead}${stance}`
-    if (ctx.prevTurns) out += `\n\nResponding to the others: ${pick(['the strongest point so far is the focus on a quick test', 'I agree on the risk, but not on waiting', 'we are closer than it looks; the disagreement is about timing'], seed)}.`
+    if (ctx.prevTurns) out += `\n\nResponding to the ${ctx.replyTo || 'others'}: ${pick(['the strongest point so far is the focus on a quick test', 'I agree on the risk, but not on waiting', 'we are closer than it looks; the disagreement is about timing'], seed)}.`
     if (ctx.final) {
       const proposal = { builder: `Go all in on ${topic}, behind a feature flag so it can be rolled back.`, skeptic: `Run a two week risk review before committing to ${topic}.`, pragmatist: `Start with a two week pilot on ${topic} for one team, then decide.` }[role]
       const vote = { builder: 'Pragmatist', skeptic: 'Pragmatist', pragmatist: 'Builder' }[role]
@@ -133,13 +200,21 @@ function textFor(agent, kind, ctx) {
     return out
   }
 
+  // A second turn answers what changed since the first (new questions, new
+  // facts), so a swarm that revisits an agent never repeats it word for word.
   switch (role) {
     case 'researcher':
+      if (ctx.spokeBefore) return `${lead}Answering the open questions on ${topic} as far as we can without outside sources:\n\nFACT: The natural owner is the lead of the one team that runs the pilot day to day.\nFACT: A fair success number is the share of the pilot team still using it after two weeks.\n\nBoth answers are working assumptions until the humans in the room confirm them.`
       return `${lead}Here is what we can say about ${topic}${focus} without outside sources.\n\nFACT: ${capital(topic)} touches more than one team, so ownership needs to be explicit.\nFACT: The first users will judge it on speed and clarity, not on feature count.\nFACT: There is at least one cheaper alternative the team should compare against.\nQUESTION: What does success look like in numbers for ${topic}?\n\nAnything above that depends on current market data should be checked before it is relied on.`
     case 'interrogator':
+      if (ctx.spokeBefore) return `${lead}One follow-up now that the board has moved on ${topic}:\n\nQUESTION: Who confirms the success number before the pilot starts?\n\nThe rest of my earlier questions still stand.`
       return `${lead}A few questions would change the answer on ${topic}:\n\nQUESTION: Who is the single owner, and who signs off?\nQUESTION: What is the deadline, and is it fixed?\nQUESTION: What have we already ruled out, and why?\n\nUntil these are answered I'd treat any timeline as a guess.`
     case 'analyst':
+      if (ctx.spokeBefore) return `${lead}Updating the decisions with the new facts on ${topic}:\n\nThe answers on ownership and measurement remove the two biggest unknowns, so the pilot can start as planned.\n\nDECISION: The lead of the pilot team owns ${topic} and signs off at the end.\nDECISION: The pilot succeeds if most of the pilot team still uses it after two weeks.`
       return `${lead}Weighing what's on the board for ${topic}:\n\nThe facts point to a narrow first version. The open questions are mostly about ownership and timing, which a short pilot answers cheaply.\n\nDECISION: Start with a two week pilot on ${topic} for one team.\nDECISION: Name one owner and one success measure before work starts.`
+    case 'synthesizer':
+      if (ctx.revising) return `${lead}**${capital(topic)}: the team's answer, revised**\n\n- **Start small:** a two week pilot for one team.\n- **Owner:** the lead of the pilot team runs it and signs off at the end.\n- **Success:** most of the pilot team still uses it after two weeks.\n- **Then decide:** expand, adjust, or stop when the pilot ends.\n\n**What changed:** the Critic asked who owns the pilot and what counts as success; both are now explicit.\n\n**Still open:** ${pick(['the exact deadline', 'the budget ceiling', 'who joins the pilot team'], seed)}; the humans in the room should settle it.`
+      return finalText(ctx, { topic, seed, lead })
     case 'writer':
       return `${lead}**${capital(topic)}: recommended plan**\n\n1. **Pilot first.** Two weeks, one team, one owner.\n2. **Measure one thing.** Pick the single number that proves it works.\n3. **Decide with data.** Expand, change course, or stop at the end of the pilot.\n\n**Risks:** unclear ownership and a moving deadline; both are handled by naming an owner up front.`
     case 'critic': {
@@ -157,12 +232,15 @@ function textFor(agent, kind, ctx) {
     case 'router':
     case 'architect':
       return `${lead}Plan ready for ${topic}.`
-    default: {
-      // Final answers: orchestrator, vp, synthesizer, combiner, or a debate winner.
-      const intro = ctx.final ? `**${capital(topic)}: the team's answer**` : `**${capital(topic)}**`
-      return `${lead}${intro}\n\n- **Start small:** a two week pilot for one team, with one named owner.\n- **Measure:** agree one success number before work starts.\n- **Decide with data:** expand, adjust, or stop when the pilot ends.\n\n**What the team disagreed on:** how ambitious the first version should be. The plan above keeps the bold option open without betting on it yet.\n\n**Still open:** ${pick(['who signs off', 'the exact deadline', 'the budget ceiling'], seed)}; the humans in the room should settle it.`
-    }
+    default:
+      return finalText(ctx, { topic, seed, lead })
   }
+}
+
+// Final answers: orchestrator, vp, synthesizer, combiner, or a debate winner.
+function finalText(ctx, { topic, seed, lead }) {
+  const intro = ctx.final ? `**${capital(topic)}: the team's answer**` : `**${capital(topic)}**`
+  return `${lead}${intro}\n\n- **Start small:** a two week pilot for one team, with one named owner.\n- **Measure:** agree one success number before work starts.\n- **Decide with data:** expand, adjust, or stop when the pilot ends.\n\n**What the team disagreed on:** how ambitious the first version should be. The plan above keeps the bold option open without betting on it yet.\n\n**Still open:** ${pick(['who signs off', 'the exact deadline', 'the budget ceiling'], seed)}; the humans in the room should settle it.`
 }
 
 function capital(s) {

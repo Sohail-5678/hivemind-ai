@@ -11,8 +11,8 @@
   --shell-gutter: 28px;
   --shell-max: 1160px;
   --room-max: 1440px;
-  --live-glow: 0 0 0 1px var(--agent-ring), 0 0 16px color-mix(in srgb, var(--agent) 30%, transparent);
-  --live-glow-human: 0 0 0 1px var(--human-ring), 0 0 14px color-mix(in srgb, var(--human) 26%, transparent);
+  --live-glow: 0 0 0 1px var(--agent-ring), 0 0 16px var(--agent-halo);
+  --live-glow-human: 0 0 0 1px var(--human-ring), 0 0 14px var(--human-halo);
 
   /* Names that markup from before the token set still reads. */
   --muted: var(--text-4);
@@ -73,8 +73,8 @@
 .brand:active .brand-mark { box-shadow: var(--neu-inset-sm); }
 .brand-mark svg { display: block; }
 .bm-hex { fill: var(--well); stroke: var(--text-4); stroke-width: 1.3; stroke-linejoin: round; }
-.bm-core { fill: var(--agent); }
-.bm-human { fill: var(--human); }
+.bm-core { fill: var(--agent-fill); }
+.bm-human { fill: var(--human-fill); }
 .bm-agent { fill: var(--agent-bright); }
 
 /* Nav: an inset track; the current section is the raised thumb. */
@@ -99,10 +99,34 @@
   font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3);
   background: var(--surface); box-shadow: var(--neu-raised-sm); border: 1px solid var(--edge);
 }
-.runtime-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; background: var(--steel-500); }
-.runtime-dot.server, .runtime-pill.server .runtime-dot { background: var(--agent); box-shadow: 0 0 8px var(--agent-ring); }
-.runtime-dot.static, .runtime-pill.static .runtime-dot { background: var(--agent-bright); box-shadow: 0 0 8px var(--agent-ring); }
+.runtime-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; background: var(--neutral); }
+.runtime-dot.server, .runtime-pill.server .runtime-dot { background: var(--agent-fill); box-shadow: 0 0 8px var(--agent-glow); }
+.runtime-dot.static, .runtime-pill.static .runtime-dot { background: var(--agent-bright); box-shadow: 0 0 8px var(--agent-glow); }
 .runtime-dot.pending, .runtime-pill.pending .runtime-dot { animation: neu-pulse 1.6s var(--ease) infinite; }
+
+/* Theme key: a raised disc like the brand mark, pressed in while held. The
+   icon is one drawing (ThemeToggle.jsx): in dark it is a sun, in light the
+   disc grows and a masked bite slides in to cut a crescent. */
+.theme-toggle {
+  width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%;
+  display: inline-grid; place-items: center;
+  color: var(--text-3);
+  background: var(--surface); box-shadow: var(--neu-raised-sm); border: 1px solid var(--edge);
+  transition: color 160ms var(--ease), box-shadow 160ms var(--ease), transform 120ms var(--ease);
+}
+.theme-toggle:hover { color: var(--text); }
+.theme-toggle:active { box-shadow: var(--neu-inset-sm); transform: translateY(1px); }
+.theme-toggle:focus-visible { box-shadow: var(--neu-raised-sm), var(--focus); }
+.theme-toggle:active:focus-visible { box-shadow: var(--neu-inset-sm), var(--focus); }
+.tt-icon { display: block; overflow: visible; }
+.tt-core { fill: currentColor; }
+.tt-rays line { stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.tt-core, .tt-bite, .tt-rays { transform-box: fill-box; transform-origin: center; transition: transform 260ms var(--ease), opacity 200ms var(--ease); }
+/* dark shows the sun: a small disc, the bite parked off it, rays out */
+.theme-toggle.is-dark .tt-core { transform: scale(0.5); }
+.theme-toggle.is-dark .tt-bite { transform: translate(6px, -6px); }
+/* light shows the moon: the full disc with the bite in, rays folded away */
+.theme-toggle.is-light .tt-rays { opacity: 0; transform: rotate(-40deg) scale(0.6); }
 
 .main {
   flex: 1; min-height: 0;
@@ -207,12 +231,12 @@
 .scene-light {
   position: absolute; inset: 0;
   background:
-    radial-gradient(1200px 760px at 6% -14%, color-mix(in srgb, var(--steel-100) 7%, transparent), transparent 62%),
-    radial-gradient(720px 540px at 98% 4%, color-mix(in srgb, var(--steel-500) 10%, transparent), transparent 70%);
+    radial-gradient(1200px 760px at 6% -14%, var(--scene-glow-1), transparent 62%),
+    radial-gradient(720px 540px at 98% 4%, var(--scene-glow-2), transparent 70%);
 }
 .scene-lattice {
   position: absolute; inset: 0;
-  fill: var(--steel-300); opacity: 0.17;
+  fill: var(--lattice); opacity: var(--lattice-o);
   -webkit-mask-image: radial-gradient(ellipse 72% 62% at 26% 6%, black 0%, transparent 74%);
   mask-image: radial-gradient(ellipse 72% 62% at 26% 6%, black 0%, transparent 74%);
   transition: opacity 500ms var(--ease);
@@ -229,9 +253,9 @@
 .orbit-ring { fill: none; stroke: var(--line); stroke-width: 1; }
 .orbit-ring.inner { stroke: var(--line); stroke-dasharray: 2 7; }
 /* Steel, not sage: nothing in the backdrop is an agent, so nothing in it glows. */
-.orbit-arc { fill: none; stroke: var(--steel-500); stroke-width: 1.2; stroke-dasharray: 7 93; stroke-dashoffset: 7; opacity: 0.6; }
-.orbit-node { fill: var(--steel-500); }
-.scene.quiet .scene-lattice { opacity: 0.07; }
+.orbit-arc { fill: none; stroke: var(--neutral); stroke-width: 1.2; stroke-dasharray: 7 93; stroke-dashoffset: 7; opacity: var(--orbit-o); }
+.orbit-node { fill: var(--neutral); }
+.scene.quiet .scene-lattice { opacity: var(--lattice-quiet-o); }
 .scene.quiet .scene-orbit { opacity: 0; animation-play-state: paused; }
 
 /* ---------------------------------------------------------------- landing */
@@ -285,7 +309,7 @@
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   background: var(--well); box-shadow: var(--neu-inset-sm);
 }
-.lp-well-glyph { font-size: calc(var(--core) * 0.074); line-height: 1; color: var(--agent); text-shadow: 0 0 16px var(--agent-ring); }
+.lp-well-glyph { font-size: calc(var(--core) * 0.074); line-height: 1; color: var(--agent); text-shadow: 0 0 16px var(--agent-glow); }
 .lp-well-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-3); }
 
 /* Zero-size orbits pivot on the centre, so rotating them never adds overflow. */
@@ -368,8 +392,8 @@
 .lp-room-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .lp-room-axes { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); }
 .lp-crowd { display: inline-flex; align-items: center; gap: 5px; padding: 7px 11px; border-radius: 999px; background: var(--well); box-shadow: var(--neu-inset-sm); }
-.lp-crowd-person { width: 9px; height: 9px; border-radius: 50%; background: var(--human); }
-.lp-crowd-agent { width: 9px; height: 9px; border-radius: 3px; background: var(--agent); }
+.lp-crowd-person { width: 9px; height: 9px; border-radius: 50%; background: var(--human-fill); }
+.lp-crowd-agent { width: 9px; height: 9px; border-radius: 3px; background: var(--agent-fill); }
 .lp-crowd-sep { width: 1px; height: 11px; margin: 0 3px; background: var(--line-2); }
 .lp-room-name { font-family: var(--font-display); font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: var(--text); }
 .lp-room-line { flex: 1; font-size: 14.5px; line-height: 1.6; color: var(--text-3); }
@@ -465,7 +489,7 @@
 .avatar.typing::before {
   content: ''; position: absolute; right: -1px; bottom: -1px; z-index: 1;
   width: 9px; height: 9px; border-radius: 50%;
-  background: var(--human); border: 2px solid var(--well);
+  background: var(--human-fill); border: 2px solid var(--well);
   animation: neu-pulse 1.2s var(--ease) infinite;
 }
 .avatar-neu.agent-av { border-radius: var(--r-sm); font-size: 15px; font-weight: 400; color: var(--agent-bright); }
@@ -490,11 +514,11 @@
 }
 .status-chip .dot { width: 7px; height: 7px; }
 .status-chip.running { color: var(--agent-bright); }
-.status-chip.running .dot { background: var(--agent); box-shadow: 0 0 10px var(--agent-ring); animation: neu-pulse 1.6s var(--ease) infinite; }
+.status-chip.running .dot { background: var(--agent-fill); box-shadow: 0 0 10px var(--agent-glow); animation: neu-pulse 1.6s var(--ease) infinite; }
 .status-chip.paused { color: var(--human-bright); }
-.status-chip.paused .dot { background: var(--human); }
+.status-chip.paused .dot { background: var(--human-fill); }
 .status-chip.conn { color: var(--text-2); background: var(--well); box-shadow: var(--neu-inset-sm); border-color: transparent; }
-.status-chip.conn .dot { background: var(--human); animation: neu-pulse 1.2s var(--ease) infinite; }
+.status-chip.conn .dot { background: var(--human-fill); animation: neu-pulse 1.2s var(--ease) infinite; }
 .status-chip.conn.error { color: var(--danger); }
 .status-chip.conn.error .dot { background: var(--danger); animation: none; }
 
@@ -564,8 +588,8 @@
   font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; color: var(--text-3);
   background: var(--well); box-shadow: var(--neu-inset-sm);
 }
-.tl-system.join .pill::before, .tl-system.leave .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--human); }
-.tl-system.leave .pill::before { background: var(--steel-500); }
+.tl-system.join .pill::before, .tl-system.leave .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--human-fill); }
+.tl-system.leave .pill::before { background: var(--neutral); }
 
 /* Things people did to the run: redirect, fork, pin, switch architecture. */
 .tl-note {
@@ -632,7 +656,7 @@
 
 .caret {
   display: inline-block; width: 7px; height: 1.05em; margin-left: 3px; vertical-align: -0.16em;
-  border-radius: 2px; background: var(--agent); box-shadow: 0 0 8px var(--agent-ring);
+  border-radius: 2px; background: var(--agent-fill); box-shadow: 0 0 8px var(--agent-glow);
   animation: tl-blink 1s steps(1) infinite;
 }
 @keyframes tl-blink { 50% { opacity: 0; } }
@@ -653,7 +677,7 @@
 .tl-empty-rings span { position: absolute; border-radius: 50%; }
 .tl-empty-rings span:nth-child(1) { inset: 0; background: var(--surface); box-shadow: var(--neu-raised-md); border: 1px solid var(--edge); }
 .tl-empty-rings span:nth-child(2) { inset: 14px; background: var(--well); box-shadow: var(--neu-inset-sm); }
-.tl-empty-rings span:nth-child(3) { inset: 35px; background: var(--agent); box-shadow: 0 0 14px var(--agent-ring); opacity: 0.75; }
+.tl-empty-rings span:nth-child(3) { inset: 35px; background: var(--agent-fill); box-shadow: 0 0 14px var(--agent-glow); opacity: 0.75; }
 .tl-empty-title { font-family: var(--font-display); font-size: 16px; color: var(--text); }
 .tl-empty-sub { max-width: 300px; font-size: 13.5px; color: var(--text-3); }
 
@@ -678,9 +702,10 @@
 .md-mention { padding: 0 5px; border-radius: 6px; font-family: var(--font-mono); font-size: 0.9em; color: var(--agent-bright); background: var(--agent-soft); }
 .md-pre {
   position: relative; margin: 10px 0; padding: 14px 16px; overflow-x: auto;
-  border-radius: var(--r-sm); background: var(--steel-950); box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: var(--r-sm); background: var(--code-bg); box-shadow: inset 0 0 0 1px var(--line);
 }
 .md-pre:last-child { margin-bottom: 0; }
+:root[data-theme="light"] .md-pre { box-shadow: inset 0 0 0 1px var(--line-2); }
 .md-pre[data-lang]::before {
   content: attr(data-lang); position: absolute; top: 7px; right: 12px;
   font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4);
@@ -723,6 +748,8 @@
 
 @media (max-width: 760px) {
   :root { --shell-gutter: 20px; }
+  /* Brand, nav, runtime pill and theme key share the bar down to 641px. */
+  .topbar { gap: 14px; }
   .lp-rooms { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .lp-steps { grid-template-columns: minmax(0, 1fr); }
   .lp-step:not(:last-child)::after { top: auto; right: auto; bottom: -18px; left: 43px; width: 1px; height: 18px; }
@@ -734,7 +761,9 @@
 @media (max-width: 640px) {
   :root { --shell-gutter: 16px; }
   .topbar { gap: 10px; padding-top: 12px; padding-bottom: 12px; }
-  .topbar-right { display: none; }
+  /* The runtime pill goes; the theme key stays at the end of the bar. */
+  .topbar-right { margin-left: 0; }
+  .runtime-pill { display: none; }
   .nav { margin-left: auto; }
   .nav a { padding: 7px 11px; font-size: 13px; }
   .landing { padding-top: 32px; }
@@ -768,6 +797,8 @@
 
 @media (max-width: 480px) {
   .brand-word { display: none; }
+  .brand { padding-right: 2px; }
+  .topbar { gap: 8px; }
   .lp-hero-copy .eyebrow { padding: 8px 13px; font-size: 10px; letter-spacing: 0.1em; }
   .lp-actions { width: 100%; }
   .lp-cta { flex: 1 1 0; padding-left: 16px; padding-right: 16px; }
@@ -785,6 +816,19 @@
   .lp-arch-glyphs { font-size: 13px; }
 }
 
+/* 360px phones: brand, four sections and the theme key share one row. */
+@media (max-width: 420px) {
+  .nav { gap: 2px; padding: 5px 4px; }
+  .nav a { padding-left: 8px; padding-right: 8px; }
+}
+/* 320px phones: the same row, a little tighter. */
+@media (max-width: 340px) {
+  :root { --shell-gutter: 12px; }
+  .topbar { gap: 4px; }
+  .nav { gap: 1px; padding: 4px 3px; }
+  .nav a { padding-left: 6px; padding-right: 6px; }
+}
+
 /* Touch: every standalone control is at least 40px tall. Inline links inside
    running text keep the line's height. */
 @media (max-width: 640px), (pointer: coarse) {
@@ -794,6 +838,7 @@
   .ws-tab, .copy-btn, .hv-mention, .hv-switch-toggle, .hv-more, .about-link,
   a.about-endpoint, .hv-select, .hv-pin-input { min-height: 40px; }
   .composer-dismiss, .ws-toast-close { min-width: 40px; min-height: 40px; }
+  .theme-toggle { width: 40px; height: 40px; }
   /* Padding, not min-height, so the hover underline stays under the words. */
   .text-link:not(.inline) { padding-block: 10px; background-origin: content-box; }
 }

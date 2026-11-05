@@ -1,11 +1,16 @@
 /* ==========================================================================
-   HiveMind design system: dark neumorphism on a steel base.
+   HiveMind design system: neumorphism on a steel base, in two themes.
    Palettes (from the brief):
      steel  #06141B #11212D #253745 #4A5C6A #9BA8AB #CCD0CF   structure
      sage   #051F20 #0B2B26 #163832 #235347 #8EB69B #DAF1DE   agents
      rose   #3E3239 #6B5560 #9E8189 #C7A9A3 #E8D2C4 #F7EFE7   humans
    Light comes from the top left: raised surfaces get a dark shadow bottom
-   right and a soft steel highlight top left; inset wells invert it.
+   right and a soft highlight top left; inset wells invert it.
+   Dark (the default) sits on steel #11212D. Light is porcelain: #CCD0CF
+   lifted toward white, a white highlight and a soft #253745 shadow, steel
+   darks for text. Components read only the semantic tokens below, so the
+   [data-theme="light"] block is the whole light theme. index.html sets the
+   attribute before first paint; lib/theme.js switches it.
    ========================================================================== */
 
 :root {
@@ -62,6 +67,45 @@
   --danger: #D58B82;
   --danger-soft: rgba(213, 139, 130, 0.13);
   --warn: #E8D2C4;
+  /* Fills (dots, meters, bars) and glows. In dark they match the text tones;
+     light needs a mid tone for fills and a softer colour for halos. */
+  --agent-fill: #8EB69B;
+  --agent-glow: rgba(142, 182, 155, 0.45);
+  --agent-glow-hi: rgba(142, 182, 155, 0.65);
+  --agent-halo: rgba(142, 182, 155, 0.30);
+  --human-fill: #C7A9A3;
+  --human-glow-hi: rgba(199, 169, 163, 0.55);
+  --human-halo: rgba(199, 169, 163, 0.26);
+  --neutral: #4A5C6A;                           /* idle dots, rings, edges */
+
+  /* structure that is neither surface nor text */
+  --face-hi: #172A37;                           /* lit side of a convex disc */
+  --track: #172A37;                             /* empty meter cells, bar tracks */
+  --track-warn: color-mix(in srgb, #6B5560 45%, #172A37);
+  --code-bg: #06141B;
+  --hub-fill: rgba(6, 20, 27, 0.55);
+  --option-bg: #11212D;
+  --scrim: color-mix(in srgb, #06141B 74%, transparent);
+  --selection: rgba(142, 182, 155, 0.28);
+  --scrollbar: rgba(155, 168, 171, 0.16);
+  --page-glow-1: rgba(74, 92, 106, 0.20);
+  --page-glow-2: rgba(35, 83, 71, 0.16);
+  --page-glow-3: rgba(107, 85, 96, 0.12);
+  --scene-glow-1: color-mix(in srgb, #CCD0CF 7%, transparent);
+  --scene-glow-2: color-mix(in srgb, #4A5C6A 10%, transparent);
+  --lattice: #9BA8AB;
+  --lattice-o: 0.17;
+  --lattice-quiet-o: 0.07;
+  --orbit-o: 0.6;
+
+  /* the two filled keys */
+  --primary-face: linear-gradient(150deg, #A4C8AF, #82AA8F);
+  --primary-ink: #06141B;
+  --primary-gloss: rgba(255, 255, 255, 0.25);
+  --primary-press: inset 3px 3px 7px rgba(5, 31, 32, 0.45), inset -2px -2px 6px rgba(218, 241, 222, 0.35);
+  --human-face: linear-gradient(150deg, #E1C7BE, #C2A39D);
+  --human-ink: #06141B;
+  --human-press: inset 3px 3px 7px rgba(62, 50, 57, 0.45), inset -2px -2px 6px rgba(247, 239, 231, 0.35);
 
   /* neumorphic shadows */
   --sh-dark: rgba(3, 10, 14, 0.78);
@@ -83,8 +127,115 @@
   --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
   --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
-  --focus: 0 0 0 2px var(--surface), 0 0 0 4px rgba(142, 182, 155, 0.6);
   --focus-ring: rgba(142, 182, 155, 0.6);       /* the --focus colour, for inset rings on scroll areas */
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus-ring);
+  --theme-meta: #11212D;
+  color-scheme: dark;
+}
+
+/* ---------- light: porcelain ----------
+   Every pair is checked against the real backgrounds (bg #E6EAE9, raised hi
+   #EEF1F0, well #DCE1E0): body text and small labels at 4.5:1 or more, fills,
+   rings and glyphs at 3:1 or more. Shadows are steel, never black, and the
+   highlight is white, so depth stays soft instead of muddy. */
+:root[data-theme="light"] {
+  --bg: #E6EAE9;
+  --surface: #E6EAE9;
+  --surface-hi: #EEF1F0;
+  --well: #DCE1E0;
+  --line: rgba(37, 55, 69, 0.10);
+  --line-2: rgba(37, 55, 69, 0.17);
+  --edge: rgba(255, 255, 255, 0.55);
+
+  --text: #11212D;      /* 12.4:1 on the well */
+  --text-2: #253745;    /*  9.3:1 */
+  --text-3: #425360;    /*  6.0:1 */
+  --text-4: #536370;    /*  4.7:1 */
+
+  --agent: #235347;
+  --agent-bright: #163832;
+  --agent-deep: #8EB69B;
+  --agent-soft: rgba(35, 83, 71, 0.09);
+  --agent-ring: rgba(35, 83, 71, 0.42);
+  --human: #6B5560;
+  --human-bright: #5B4651;
+  --human-deep: #C7A9A3;
+  --human-soft: rgba(107, 85, 96, 0.09);
+  --human-ring: rgba(107, 85, 96, 0.40);
+  --danger: #8A4A40;    /* muted terracotta, 5.1:1 on the well */
+  --danger-soft: rgba(138, 74, 64, 0.16);
+  --warn: #765440;
+
+  --agent-fill: #4F7D67;
+  --agent-glow: rgba(79, 125, 103, 0.40);
+  --agent-glow-hi: rgba(79, 125, 103, 0.42);
+  --agent-halo: rgba(142, 182, 155, 0.55);
+  --human-fill: #866A74;
+  --human-glow-hi: rgba(134, 106, 116, 0.36);
+  --human-halo: rgba(199, 169, 163, 0.55);
+  --neutral: #6F7E85;
+
+  --face-hi: #F6F8F7;
+  --track: #D0D7D6;
+  --track-warn: color-mix(in srgb, #866A74 34%, #D0D7D6);
+  --code-bg: #F2F4F3;   /* a paper sheet, so code reads inside an agent's well */
+  --hub-fill: rgba(37, 55, 69, 0.05);
+  --option-bg: #EEF1F0;
+  --scrim: rgba(37, 55, 69, 0.34);
+  --selection: rgba(142, 182, 155, 0.45);
+  --scrollbar: rgba(37, 55, 69, 0.20);
+  --page-glow-1: rgba(255, 255, 255, 0.50);
+  --page-glow-2: rgba(142, 182, 155, 0.16);
+  --page-glow-3: rgba(199, 169, 163, 0.16);
+  --scene-glow-1: rgba(255, 255, 255, 0.42);
+  --scene-glow-2: rgba(74, 92, 106, 0.05);
+  --lattice: #4A5C6A;
+  --lattice-o: 0.13;
+  --lattice-quiet-o: 0.05;
+  --orbit-o: 0.4;
+
+  --primary-face: linear-gradient(150deg, #2F6657, #1D493E);
+  --primary-ink: #EEF6EF;
+  --primary-gloss: rgba(218, 241, 222, 0.16);
+  --primary-press: inset 3px 3px 7px rgba(5, 31, 32, 0.55), inset -2px -2px 6px rgba(142, 182, 155, 0.22);
+  --human-face: linear-gradient(150deg, #7C6470, #5E4954);
+  --human-ink: #F7EFE7;
+  --human-press: inset 3px 3px 7px rgba(62, 50, 57, 0.55), inset -2px -2px 6px rgba(199, 169, 163, 0.25);
+
+  --sh-dark: rgba(37, 55, 69, 0.20);
+  --sh-light: rgba(255, 255, 255, 0.90);
+  --neu-raised: 9px 9px 22px rgba(37, 55, 69, 0.17), -9px -9px 20px rgba(255, 255, 255, 0.86);
+  --neu-raised-md: 6px 6px 15px rgba(37, 55, 69, 0.17), -6px -6px 14px rgba(255, 255, 255, 0.84);
+  --neu-raised-sm: 3px 3px 8px rgba(37, 55, 69, 0.19), -3px -3px 7px rgba(255, 255, 255, 0.88);
+  --neu-inset: inset 5px 5px 11px rgba(37, 55, 69, 0.15), inset -5px -5px 11px rgba(255, 255, 255, 0.78);
+  --neu-inset-sm: inset 2px 2px 5px rgba(37, 55, 69, 0.16), inset -2px -2px 5px rgba(255, 255, 255, 0.82);
+  --neu-float: 16px 20px 40px rgba(37, 55, 69, 0.20), -10px -10px 24px rgba(255, 255, 255, 0.78);
+
+  --focus-ring: rgba(35, 83, 71, 0.72);
+  --theme-meta: #E6EAE9;
+  color-scheme: light;
+}
+
+/* While the theme switches, colours ease over instead of snapping. lib/theme.js
+   adds the class for one transition and skips it under reduced motion.
+   transform and opacity stay in the list so the toggle's own icon still morphs. */
+:root.theme-switching,
+:root.theme-switching *,
+:root.theme-switching *::before,
+:root.theme-switching *::after {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow, outline-color, opacity, transform !important;
+  transition-duration: 240ms !important;
+  transition-timing-function: var(--ease) !important;
+  transition-delay: 0s !important;
+}
+/* The two filled keys paint their face with a gradient, which cannot ease and
+   so swaps at once. Their ink swaps with it, so the label never fades across a
+   face it no longer matches (dark ink on deep sage for a moment). */
+:root.theme-switching .btn-primary,
+:root.theme-switching .btn-primary *,
+:root.theme-switching .btn-human,
+:root.theme-switching .btn-human * {
+  transition-property: box-shadow, transform !important;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -97,9 +248,9 @@ body {
   color: var(--text-2);
   background-color: var(--bg);
   background-image:
-    radial-gradient(1100px 620px at 12% -12%, rgba(74, 92, 106, 0.20), transparent 62%),
-    radial-gradient(900px 520px at 108% 108%, rgba(35, 83, 71, 0.16), transparent 62%),
-    radial-gradient(760px 460px at -12% 104%, rgba(107, 85, 96, 0.12), transparent 64%);
+    radial-gradient(1100px 620px at 12% -12%, var(--page-glow-1), transparent 62%),
+    radial-gradient(900px 520px at 108% 108%, var(--page-glow-2), transparent 62%),
+    radial-gradient(760px 460px at -12% 104%, var(--page-glow-3), transparent 64%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -111,14 +262,18 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 input, select, textarea { font: inherit; color: var(--text); }
 a { color: var(--agent); text-decoration: none; }
 code, kbd, .mono { font-family: var(--font-mono); }
-::selection { background: rgba(142, 182, 155, 0.28); color: var(--text); }
+::selection { background: var(--selection); color: var(--text); }
 /* The transparent outline never shows here, but forced-colors mode drops
    box-shadow and paints the outline instead, so focus stays visible there. */
 :focus-visible { outline: 2px solid transparent; outline-offset: 2px; box-shadow: var(--focus); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: rgba(155, 168, 171, 0.16); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+/* Firefox draws its own scrollbars; give them the same quiet thumb. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-color: var(--scrollbar) transparent; }
+}
 
 /* ---------- surfaces ---------- */
 .neu { background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--neu-raised); border: 1px solid var(--edge); }
@@ -133,10 +288,10 @@ code, kbd, .mono { font-family: var(--font-mono); }
 .eyebrow { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); padding: 8px 15px; border-radius: 999px; background: var(--surface); box-shadow: var(--neu-raised-sm); }
 
 /* ---------- status dot ---------- */
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; background: var(--steel-500); }
-.dot.agent { background: var(--agent); box-shadow: 0 0 10px rgba(142, 182, 155, 0.65); }
-.dot.human { background: var(--human); box-shadow: 0 0 10px rgba(199, 169, 163, 0.55); }
-.dot.live { background: var(--agent); animation: neu-pulse 1.6s var(--ease) infinite; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; background: var(--neutral); }
+.dot.agent { background: var(--agent-fill); box-shadow: 0 0 10px var(--agent-glow-hi); }
+.dot.human { background: var(--human-fill); box-shadow: 0 0 10px var(--human-glow-hi); }
+.dot.live { background: var(--agent-fill); animation: neu-pulse 1.6s var(--ease) infinite; }
 .dot.danger { background: var(--danger); }
 @keyframes neu-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.55; } }
 
@@ -153,12 +308,12 @@ code, kbd, .mono { font-family: var(--font-mono); }
 .btn:active:not(:disabled), .btn.pressed { box-shadow: var(--neu-inset-sm); transform: translateY(1px); }
 /* Unavailable controls go flat: no light, no depth (same as the room's action keys). */
 .btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; border-color: var(--line); }
-.btn-primary { color: var(--steel-950); background: linear-gradient(150deg, #A4C8AF, #82AA8F); box-shadow: var(--neu-raised-sm), inset 0 1px 0 rgba(255, 255, 255, 0.25); border-color: transparent; }
-.btn-primary:hover:not(:disabled) { color: var(--steel-950); filter: brightness(1.04); }
-.btn-primary:active:not(:disabled) { box-shadow: inset 3px 3px 7px rgba(5, 31, 32, 0.45), inset -2px -2px 6px rgba(218, 241, 222, 0.35); }
-.btn-human { color: var(--steel-950); background: linear-gradient(150deg, #E1C7BE, #C2A39D); box-shadow: var(--neu-raised-sm), inset 0 1px 0 rgba(255, 255, 255, 0.25); border-color: transparent; }
-.btn-human:hover:not(:disabled) { color: var(--steel-950); filter: brightness(1.04); }
-.btn-human:active:not(:disabled) { box-shadow: inset 3px 3px 7px rgba(62, 50, 57, 0.45), inset -2px -2px 6px rgba(247, 239, 231, 0.35); }
+.btn-primary { color: var(--primary-ink); background: var(--primary-face); box-shadow: var(--neu-raised-sm), inset 0 1px 0 var(--primary-gloss); border-color: transparent; }
+.btn-primary:hover:not(:disabled) { color: var(--primary-ink); filter: brightness(1.04); }
+.btn-primary:active:not(:disabled) { box-shadow: var(--primary-press); }
+.btn-human { color: var(--human-ink); background: var(--human-face); box-shadow: var(--neu-raised-sm), inset 0 1px 0 var(--primary-gloss); border-color: transparent; }
+.btn-human:hover:not(:disabled) { color: var(--human-ink); filter: brightness(1.04); }
+.btn-human:active:not(:disabled) { box-shadow: var(--human-press); }
 .btn-ghost { color: var(--text-3); }
 .btn-danger { color: var(--danger); }
 .btn-sm { padding: 7px 14px; font-size: 12.5px; }
@@ -174,7 +329,7 @@ code, kbd, .mono { font-family: var(--font-mono); }
 }
 .input::placeholder, .field input::placeholder, .field textarea::placeholder { color: var(--text-4); }
 .input:focus, .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--agent-ring); box-shadow: var(--neu-inset-sm), var(--focus); }
-.field select option { background: var(--steel-850); color: var(--text); }
+.field select option { background: var(--option-bg); color: var(--text); }
 
 /* ---------- segmented control: inset track, raised thumb ---------- */
 .seg { display: inline-flex; gap: 4px; padding: 5px; border-radius: 999px; background: var(--well); box-shadow: var(--neu-inset-sm); }
@@ -203,9 +358,12 @@ code, kbd, .mono { font-family: var(--font-mono); }
 
 /* ---------- avatars ---------- */
 .avatar-neu { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--text); background: var(--surface); box-shadow: var(--neu-raised-sm); position: relative; flex-shrink: 0; }
-.avatar-neu::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1.5px solid var(--ring, var(--steel-500)); opacity: 0.85; }
+.avatar-neu::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1.5px solid var(--ring, var(--neutral)); opacity: 0.85; }
 .avatar-neu.agent { --ring: var(--agent); color: var(--agent-bright); font-family: var(--font-mono); }
 .avatar-neu.human { --ring: var(--human); color: var(--human-bright); }
+/* Presence colours are pale sand and rose, made for steel. On porcelain each
+   one is drawn down toward #3E3239, so the ring keeps its hue and reads. */
+:root[data-theme="light"] .avatar-neu.human::after { border-color: color-mix(in srgb, var(--ring) 48%, #3E3239); }
 
 /* ---------- motion ---------- */
 @keyframes neu-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

@@ -1,7 +1,7 @@
 // Pure helpers for rooms in the static runtime: config sanitizing, the inputs a
 // team run needs from the timeline, and late-joiner snapshots sized for public
 // relays. No React and no DOM, so the room core and the Node checks share them.
-import { PATTERNS, PATTERN_ORDER, clampConfig } from '@shared/swarm/patterns.js'
+import { PATTERNS, PATTERN_ORDER, TURN_TAKING, clampConfig } from '@shared/swarm/patterns.js'
 import { compactSwarmView } from '@shared/swarm/view.js'
 import { utf8Length } from '../lib/relay.js'
 
@@ -39,10 +39,12 @@ export function sameConfig(a, b) {
   return keys.every((k) => (a || {})[k] === (b || {})[k])
 }
 
-// Timeline line for a `config` event, e.g. "Switched to Peer-to-peer team".
+// Timeline line for a `config` event, e.g. "Switched to Peer-to-peer team with
+// moderator turn-taking". Patterns without turns keep the short form.
 export function configLabel(config) {
   if (config?.crew !== 'team') return 'Switched to a single agent'
-  return `Switched to ${PATTERNS[config.pattern]?.name || 'Auto'} team`
+  const turn = TURN_TAKING[config.turnTaking]
+  return `Switched to ${PATTERNS[config.pattern]?.name || 'Auto'} team${turn ? ` with ${turn.name.toLowerCase()} turn-taking` : ''}`
 }
 
 export function patternName(pattern) {

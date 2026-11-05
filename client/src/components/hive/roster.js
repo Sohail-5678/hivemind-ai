@@ -14,6 +14,7 @@ export function teamSize(pattern, config, provider = 'simulated') {
     subtasks: Math.min(4, cfg.width + 1),
     tasks: Math.min(5, cfg.width + 2),
     rounds: Math.max(1, Math.min(3, cfg.rounds)),
+    turnTaking: cfg.turnTaking,
   }
 }
 
@@ -25,11 +26,13 @@ function countFor(pattern, role, size) {
 }
 
 // [{ id, role, name, glyph, color, description, count }] for config.pattern.
-// `count` > 1 marks a role the engine instantiates several times.
+// `count` > 1 marks a role the engine instantiates several times. A Moderator
+// joins when it runs the floor (turn-taking 'moderator').
 export function plannedTeam(config, provider = 'simulated') {
   const pattern = patternId(config)
   const size = teamSize(pattern, config, provider)
-  return (PATTERNS[pattern].team || []).map((role) => {
+  const roles = [...(PATTERNS[pattern].team || []), ...(size.turnTaking === 'moderator' ? ['moderator'] : [])]
+  return roles.map((role) => {
     const a = makeAgent(role)
     const count = countFor(pattern, role, size)
     const name = pattern === 'fanout' && role === 'worker' ? 'Persona' : a.name
@@ -66,8 +69,9 @@ export function mentionTargets(config, swarm) {
   const out = []
   for (const a of source) {
     const role = a?.role
-    // The Architect only acts before anyone can reply; the Monitor is not an LLM.
-    if (!role || role === 'architect' || role === 'monitor' || seen.has(role)) continue
+    // The Architect only acts before anyone can reply, the Moderator only picks
+    // speakers, and the Monitor is not an LLM.
+    if (!role || role === 'architect' || role === 'moderator' || role === 'monitor' || seen.has(role)) continue
     seen.add(role)
     out.push(asTarget(role, a))
   }
@@ -122,13 +126,16 @@ export function plannedGraph(config, provider = 'simulated') {
         }
       }
       return { layout: 'tree', nodes, edges }
+    // A Moderator sits in the middle of the ring it runs (engine.js debate, swarm).
     case 'debate': {
       const peers = ['builder', 'skeptic', 'pragmatist']
       peers.forEach((r, i) => { node(r, r, 0, i); edge(r, peers[(i + 1) % peers.length]) })
+      if (size.turnTaking === 'moderator') node('moderator', 'moderator', 1)
       return { layout: 'ring', nodes, edges }
     }
     case 'swarm':
       ['researcher', 'interrogator', 'analyst', 'critic', 'synthesizer'].forEach((r, i) => node(r, r, 0, i))
+      if (size.turnTaking === 'moderator') node('moderator', 'moderator', 1)
       return { layout: 'ring', nodes, edges }
     default:
       node('architect', 'architect', 0)

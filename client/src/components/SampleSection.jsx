@@ -16,7 +16,7 @@ const SOLO_TIPS = [
 ]
 const TEAM_TIPS = [
   { icon: 'pin', title: 'Pin a constraint', text: 'Open the Board and pin something like “budget under $5k”. Every agent has to respect it.' },
-  { icon: 'at', title: '@mention an agent', text: '“@critic check the numbers.” In a Swarm it raises that agent’s bid to speak; in other teams the agent sees your note marked for it.', fits: ['swarm'] },
+  { icon: 'at', title: '@mention an agent', text: '“@critic check the numbers.” In a Swarm it gives that agent a reason to speak next; in other teams the agent sees your note marked for it.', fits: ['swarm'] },
   { icon: 'vote', title: 'Vote in a debate', text: 'With Peer-to-peer, the agents propose answers and you vote alongside them. Ties go to the humans.', fits: ['debate'] },
   { icon: 'flag', title: 'Approve an escalation', text: 'When the Monitor hits the budget or spots a loop, it stops and asks you: continue or wrap up.' },
   { icon: 'fork', title: 'Fork with another architecture', text: 'Re-run the same goal with a different team and compare the calls, the time and the answer.' },

@@ -6,6 +6,20 @@
     <meta name="description" content="HiveMind: multiplayer, multi-agent rooms. Your team and a team of AI agents work on one goal in the same live room, with nine architectures, a shared board and live controls for every person." />
     <meta name="theme-color" content="#11212D" />
     <meta name="color-scheme" content="dark" />
+    <script>
+      /* Theme before first paint, so a light page never flashes dark. lib/theme.js takes over after load. */
+      (function () {
+        var t = 'dark'
+        try { if (localStorage.getItem('hivemind_theme') === 'light') t = 'light' } catch (e) {}
+        var d = document.documentElement
+        d.dataset.theme = t
+        if (t === 'light') {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#E6EAE9')
+          document.querySelector('meta[name="color-scheme"]').setAttribute('content', 'light')
+        }
+      })()
+    </script>
+    <style>html { background: #11212D; } html[data-theme="light"] { background: #E6EAE9; }</style>
     <meta property="og:title" content="HiveMind · Multiplayer, multi-agent rooms" />
     <meta property="og:description" content="People and agent teams working in one live room. Watch every token, pin facts to a shared board, vote with the agents and steer the run as it happens." />
     <meta property="og:type" content="website" />

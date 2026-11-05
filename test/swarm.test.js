@@ -11,7 +11,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { getEventListeners } from 'node:events'
 import { createSwarmRun, semaphore } from '../server/swarm/engine.js'
 import { reduceSwarmView, interruptedDone, compactSwarmView } from '../server/swarm/view.js'
-import { PATTERN_ORDER } from '../server/swarm/patterns.js'
+import { PATTERN_ORDER, TURN_TAKING, turnTakingFor, clampConfig, defaultConfig, estimateCalls } from '../server/swarm/patterns.js'
+import { parseTags, stripTags } from '../server/swarm/blackboard.js'
 import { scriptedCall } from '../server/swarm/scripted.js'
 import { makeAgent } from '../server/swarm/roles.js'
 import { extractJSON } from '../server/swarm/json.js'
@@ -363,6 +364,7 @@ async function main() {
 
   await concurrentBranches()
   await promptsAndPlans()
+  await turnTakingStrategies()
 
   await serverUnits()
   scriptedTopics()
@@ -552,6 +554,228 @@ async function promptsAndPlans() {
 }
 
 // ---------------------------------------------------------------------------
+// Turn-taking (lecture: group chat). Debate and swarm follow the room's
+// strategy; every turn says who got the floor and why.
+// ---------------------------------------------------------------------------
+const turnsOf = (h) => h.emitted.filter((m) => m.type === 'swarm_bids')
+const speakersOf = (h) => turnsOf(h).flatMap((t) => t.speakers)
+const startsOf = (h, kind) => h.emitted.filter((m) => m.type === 'swarm_agent_start' && (!kind || m.kind === kind)).map((m) => m.agentId)
+
+async function turnTakingStrategies() {
+  console.log('Turn-taking')
+  check('TURN_TAKING names the five lecture strategies', ['round_robin', 'handoff', 'moderator', 'self_select', 'auction'].every((id) => TURN_TAKING[id]?.name && TURN_TAKING[id].summary))
+  check('turnTakingFor lists the allowed strategies, default first', turnTakingFor('debate').join() === 'round_robin,moderator,auction,handoff' &&
+    turnTakingFor('swarm').join() === 'auction,round_robin,moderator,self_select,handoff' && turnTakingFor('sequential').length === 0 && turnTakingFor('nope').length === 0)
+  check('clampConfig keeps an allowed strategy', clampConfig('debate', 'simulated', { turnTaking: 'handoff' }).turnTaking === 'handoff' && clampConfig('swarm', 'simulated', { turnTaking: 'self_select' }).turnTaking === 'self_select')
+  check('clampConfig rejects a strategy the pattern does not offer', clampConfig('debate', 'simulated', { turnTaking: 'self_select' }).turnTaking === 'round_robin' &&
+    clampConfig('swarm', 'simulated', { turnTaking: 'chaos' }).turnTaking === 'auction' && clampConfig('sequential', 'simulated', { turnTaking: 'auction' }).turnTaking === null &&
+    defaultConfig('router').turnTaking === null)
+  check('estimateCalls counts the Moderator\'s picks', estimateCalls('debate', { rounds: 2, turnTaking: 'moderator' }) === 11 && estimateCalls('debate', { rounds: 2, turnTaking: 'round_robin' }) === 7 &&
+    estimateCalls('swarm', { turnTaking: 'moderator' }) === 15 && estimateCalls('swarm', { turnTaking: 'auction' }) === 9)
+  check('... so the default budget grows with them', clampConfig('debate', 'simulated', { turnTaking: 'moderator' }).maxCalls === 13 && clampConfig('swarm', 'simulated', { turnTaking: 'moderator' }).maxCalls === 16)
+
+  // Every strategy finishes; the speaking order is the one the strategy implies.
+  const ORDERS = {
+    debate: {
+      round_robin: 'builder skeptic pragmatist builder skeptic pragmatist',
+      moderator: 'pragmatist builder skeptic builder skeptic pragmatist',
+      auction: 'builder skeptic pragmatist skeptic pragmatist builder',
+      handoff: 'builder skeptic pragmatist skeptic builder pragmatist',
+    },
+    swarm: {
+      auction: 'researcher interrogator analyst synthesizer critic synthesizer critic',
+      round_robin: 'researcher interrogator analyst synthesizer critic researcher analyst synthesizer critic',
+      moderator: 'researcher interrogator analyst synthesizer critic synthesizer critic',
+      self_select: 'researcher analyst interrogator synthesizer researcher critic analyst synthesizer critic',
+      handoff: 'researcher interrogator researcher analyst synthesizer critic synthesizer critic',
+    },
+  }
+  const BY = { round_robin: ['order'], moderator: ['moderator', 'order'], auction: ['bids', 'order'], handoff: ['handoff', 'order', 'bids'], self_select: ['self'] }
+  const runs = {}
+  for (const pattern of ['debate', 'swarm']) {
+    for (const tt of turnTakingFor(pattern)) {
+      const h = team({ pattern, config: { turnTaking: tt } })
+      const { result, error } = await settle(h)
+      runs[`${pattern}/${tt}`] = h
+      const turns = turnsOf(h)
+      const nodes = h.view.swarm?.graph.nodes || []
+      check(`${pattern} / ${TURN_TAKING[tt].name}: finishes with a final answer`, !error && result.outcome === 'completed' && result.final.length > 40 && Boolean(finalEvent(h)) &&
+        h.emitted[0].turnTaking === tt && !nodes.some((n) => n.status === 'running' || n.status === 'queued'))
+      check(`... every turn names its strategy, rule and reason`, turns.length > 0 && turns.every((t) => t.strategy === tt && BY[tt].includes(t.by) && t.speakers.length > 0 && t.reason.length > 10))
+      check(`... in the order the strategy implies`, speakersOf(h).join(' ') === ORDERS[pattern][tt])
+      if (pattern === 'debate') {
+        const peerTurns = startsOf(h, 'debate_turn')
+        // Each peer once per round, then the winner's write-up.
+        check('... every peer speaks once per round, then the team votes', ['builder', 'skeptic', 'pragmatist'].every((p) => peerTurns.filter((x) => x === p).length === 2) &&
+          h.emitted.some((m) => m.type === 'swarm_vote_closed' && m.winner === 'pragmatist'))
+      }
+    }
+  }
+  const orders = (pattern) => new Set(turnTakingFor(pattern).filter((tt) => tt !== 'moderator' || pattern === 'debate').map((tt) => speakersOf(runs[`${pattern}/${tt}`]).join(' ')))
+  check('the debate strategies order the rounds differently', orders('debate').size === 4)
+  check('the swarm strategies take different paths', orders('swarm').size === 4)
+
+  {
+    // The Moderator: one call per real choice, all counted against the budget.
+    const deb = runs['debate/moderator']
+    const sw = runs['swarm/moderator']
+    const modCalls = (h) => startsOf(h).filter((id) => id === 'moderator').length
+    const monitorCalls = (h) => h.emitted.filter((m) => m.type === 'swarm_monitor').pop().calls
+    check('debate Moderator: two picks per round, counted as calls', modCalls(deb) === 4 && monitorCalls(deb) === 11 && turnsOf(deb).filter((t) => t.by === 'moderator').length === 4)
+    check('swarm Moderator: one pick per turn with a choice, counted as calls', modCalls(sw) === 6 && monitorCalls(sw) === 13 && startsOf(sw).length === 13)
+    check('... it sits in the middle of the ring and hands the floor along an edge', sw.view.swarm.graph.nodes.some((n) => n.id === 'moderator' && n.layer === 1) &&
+      sw.emitted.some((m) => m.type === 'swarm_edge' && m.from === 'moderator' && m.to === 'critic') && sw.view.swarm.team.moderator?.role === 'moderator')
+    check('... and its repeated picks are not flagged as a loop', !sw.view.swarm.monitor.flags.some((f) => f === 'loop:moderator'))
+    check('the Moderator is only in the room when it runs the floor', !runs['swarm/auction'].view.swarm.team.moderator && !runs['debate/round_robin'].view.swarm.team.moderator)
+
+    // A tight budget: the Moderator steps aside so every peer still speaks.
+    const tight = team({ pattern: 'debate', config: { turnTaking: 'moderator', maxCalls: 8 } })
+    const tightRes = await settle(tight)
+    check('debate Moderator steps aside when calls are short, and the debate still completes', !tightRes.error && tightRes.result.outcome === 'completed' && tightRes.result.stats.calls <= 8 &&
+      turnsOf(tight).some((t) => /stepped aside/.test(t.reason)) && !tight.emitted.some((m) => m.type === 'swarm_escalation'))
+    // Seven calls: once two are left, a Moderator pick would leave the speaker none.
+    const swTight = team({ pattern: 'swarm', config: { turnTaking: 'moderator', maxCalls: 7 } })
+    const swTightRes = await settle(swTight)
+    const asideAt = turnsOf(swTight).find((t) => /stepped aside/.test(t.reason))
+    check('swarm Moderator never spends the last call a speaker needs', !swTightRes.error && swTightRes.result.stats.calls <= 7 && asideAt?.by === 'bids' &&
+      startsOf(swTight).filter((id) => id === 'moderator').length === 2)
+
+    // A Moderator whose JSON can't be read: the default rule decides, and the call still counts.
+    const { llm, calls } = fakeLLM({ json: () => 'I would pick someone clever.' })
+    const bad = team({ pattern: 'swarm', llm, config: { turnTaking: 'moderator' } })
+    const badRes = await settle(bad)
+    const fallbacks = turnsOf(bad).filter((t) => /could not be used/.test(t.reason))
+    check('an unreadable Moderator pick falls back to the bids and still counts as a call', !badRes.error && fallbacks.length > 0 && fallbacks.every((t) => t.by === 'bids' && t.bids.length === 5) &&
+      calls.filter((c) => c.kind === 'moderate').length === startsOf(bad).filter((id) => id === 'moderator').length && calls.length === badRes.result.stats.calls)
+    const modPrompt = calls.find((c) => c.kind === 'moderate')
+    check('... and the Moderator is told it only chooses, with the candidates and a schema', /only choose who speaks next/.test(modPrompt?.system || '') && /"speaker": one of \[/.test(modPrompt.system) && /- critic \(Critic\)|- interrogator \(Interrogator\)/.test(modPrompt.user))
+  }
+
+  {
+    // Handoff fallbacks: a self pick or a name off the team goes to the default rule.
+    const self = (agent) => `${agent.name} weighs in.\nPROPOSAL: ${agent.name} plan.\nVOTE: ${agent.role === 'builder' ? 'Skeptic' : 'Builder'}\nNEXT: ${agent.name}`
+    const { llm } = slowLLM({ delay: () => 0, text: self })
+    const h = team({ pattern: 'debate', llm, config: { turnTaking: 'handoff' } })
+    const { result, error } = await settle(h)
+    const named = turnsOf(h).filter((t) => /named itself/.test(t.reason))
+    check('debate handoff: a peer naming itself falls back to the next peer in order', !error && result.outcome === 'completed' && named.length >= 2 && named.every((t) => t.by === 'order') &&
+      speakersOf(h).join(' ') === 'builder skeptic pragmatist builder skeptic pragmatist')
+
+    const offTeam = (agent) => (agent.role === 'critic' ? 'Fine.\nVERDICT: APPROVE\nNEXT: the Mailman' : `${agent.name} reports.\nFACT: ${agent.id} checked one thing\nDECISION: ${agent.id} decided one thing\nNEXT: ${agent.role === 'researcher' ? '@critic' : 'the Mailman'}`)
+    const sw = slowLLM({ delay: () => 0, text: offTeam })
+    const s = team({ pattern: 'swarm', llm: sw.llm, config: { turnTaking: 'handoff' } })
+    const sres = await settle(s)
+    const reasons = turnsOf(s).map((t) => t.reason)
+    check('swarm handoff: naming the Critic with no draft falls back to the bids', !sres.error && sres.result.outcome === 'completed' && reasons.some((r) => /no new draft to review/.test(r)))
+    check('... and so does a name that is not on the team', reasons.some((r) => /named "the Mailman", who is not on the team/.test(r)) && turnsOf(s).slice(1).every((t) => t.by === 'bids'))
+    check('the speaker is asked for a NEXT line naming a teammate', sw.stats.calls.filter((c) => c.kind === 'text').every((c) => /End with one line "NEXT: <role>"/.test(c.user)))
+    const valid = slowLLM({ delay: () => 0, text: (agent) => (agent.role === 'critic' ? 'Good.\nVERDICT: APPROVE' : `${agent.name}.\nFACT: ${agent.id} one\nFACT: ${agent.id} two\nFACT: ${agent.id} three\nDECISION: ${agent.id} decided\nNEXT: ${agent.role === 'researcher' ? 'Synthesizer' : 'Critic'}`) })
+    const v = team({ pattern: 'swarm', llm: valid.llm, config: { turnTaking: 'handoff' } })
+    await settle(v)
+    check('swarm handoff: a valid NEXT line gives that agent the floor', speakersOf(v).join(' ') === 'researcher synthesizer critic' && turnsOf(v)[1].by === 'handoff')
+  }
+
+  {
+    // Self-selection: at most two at once, a fixed priority, a response limit.
+    const { llm, stats } = slowLLM({ delay: () => 15 })
+    const h = team({ pattern: 'swarm', llm, config: { turnTaking: 'self_select' } })
+    const { result, error } = await settle(h)
+    const pairs = turnsOf(h).filter((t) => t.speakers.length === 2)
+    check('self-selection runs up to two speakers at once, never more', !error && result.outcome === 'completed' && pairs.length > 0 && stats.maxActive === 2 && turnsOf(h).every((t) => t.speakers.length <= 2))
+    check('... ordered by the fixed priority, with every opt-in and its reason on record', pairs.every((t) => t.optIns.length >= 2 && t.optIns.every((o) => o.reason)) &&
+      turnsOf(h).every((t) => t.optIns.map((o) => o.agentId).join() === [...t.optIns].sort((a, b) => ['critic', 'synthesizer', 'analyst', 'researcher', 'interrogator'].indexOf(a.agentId) - ['critic', 'synthesizer', 'analyst', 'researcher', 'interrogator'].indexOf(b.agentId)).map((o) => o.agentId).join()))
+    const scripted = runs['swarm/self_select']
+    let active = 0
+    let most = 0
+    for (const m of scripted.emitted) {
+      if (m.type === 'swarm_agent_start') most = Math.max(most, ++active)
+      if (m.type === 'swarm_agent_done') active--
+    }
+    check('... with the scripted brain too (two agents overlap, never three)', most === 2)
+    check('the Critic never reviews in the same turn the Synthesizer rewrites', turnsOf(scripted).every((t) => !(t.speakers.includes('critic') && t.speakers.includes('synthesizer'))))
+
+    // A Critic that never approves: the response limit ends the loop.
+    let n = 0
+    const stubborn = slowLLM({ delay: () => 0, text: (agent) => `${agent.name} pass ${++n}.\n${agent.role === 'critic' ? `Still not right, round ${n}.\nVERDICT: REVISE` : agent.role === 'analyst' ? `DECISION: decision ${n}` : `FACT: fact ${n}`}` })
+    const s = team({ pattern: 'swarm', llm: stubborn.llm, config: { turnTaking: 'self_select', maxCalls: 16 } })
+    const sres = await settle(s)
+    const perAgent = (id) => speakersOf(s).filter((x) => x === id).length
+    check('self-selection: no agent speaks more than three times', !sres.error && ['researcher', 'interrogator', 'analyst', 'critic', 'synthesizer'].every((id) => perAgent(id) <= 3) && perAgent('critic') === 3)
+    check('... and the latest draft stands once nobody may opt in', sres.result.outcome === 'completed' && sres.result.final.length > 0 &&
+      s.events.some((e) => e.type === 'swarm_note' && /response limit/.test(e.content) && /latest draft stands/.test(e.content)))
+  }
+
+  {
+    // A human @mention still reaches the floor under every strategy that weighs it.
+    const directives = [{ id: 41, author: { name: 'Alice' }, content: '@skeptic what is the biggest risk?' }]
+    const h = team({ pattern: 'debate', directives, config: { turnTaking: 'auction' } })
+    await settle(h)
+    check('debate bids: a human call lifts that peer to the top', speakersOf(h)[0] === 'skeptic' && /Alice called on it/.test(turnsOf(h)[0].reason))
+    const m = team({ pattern: 'debate', directives, config: { turnTaking: 'moderator' } })
+    await settle(m)
+    check('the scripted Moderator gives the floor to the peer a human called on', speakersOf(m)[0] === 'skeptic' && turnsOf(m)[0].by === 'moderator')
+  }
+
+  check('a NEXT line is a control line, upper case only', parseTags('Done.\nNEXT: the Skeptic').control.next === 'the Skeptic' && parseTags('Next: we ship it').control.next === undefined &&
+    stripTags('Done.\nNEXT: @critic\nNext: we ship it') === 'Done.\nNext: we ship it')
+  check('... that may carry a short why after the name', parseTags('Draft.\nNEXT: Critic, to check the draft').control.next === 'Critic' &&
+    parseTags('NEXT: the Critic (it should check this)').control.next === 'the Critic' && parseTags('NEXT: Critic — check it').control.next === 'Critic' &&
+    stripTags('Draft.\nNEXT: Critic, to check the draft') === 'Draft.')
+
+  {
+    // Models write the handoff line loosely: a lower-case last line still names the next speaker.
+    const loose = slowLLM({ delay: () => 0, text: (agent) => (agent.role === 'critic' ? 'Good.\nVERDICT: APPROVE' : `${agent.name}.\nFACT: ${agent.id} one\nFACT: ${agent.id} two\nFACT: ${agent.id} three\nDECISION: ${agent.id} decided\nNext: ${agent.role === 'researcher' ? 'the synthesizer, to draft it' : 'critic'}`) })
+    const h = team({ pattern: 'swarm', llm: loose.llm, config: { turnTaking: 'handoff' } })
+    const { result, error } = await settle(h)
+    check('swarm handoff: a last line "Next: critic" in any case still hands the floor over', !error && result.outcome === 'completed' &&
+      speakersOf(h).join(' ') === 'researcher synthesizer critic' && turnsOf(h).slice(1).every((t) => t.by === 'handoff'))
+  }
+
+  {
+    // At the budget the Monitor asks before a debate turn is announced, so the
+    // room never sees a peer get the floor and then not speak.
+    for (const tt of turnTakingFor('debate')) {
+      const h = team({ pattern: 'debate', config: { turnTaking: tt, maxCalls: 4 } })
+      const { result, error } = await settle(h)
+      const announced = speakersOf(h)
+      check(`debate / ${TURN_TAKING[tt].name} at the budget: every peer given the floor speaks`, !error && result.outcome === 'budget' && announced.length > 0 &&
+        announced.join(' ') === startsOf(h, 'debate_turn').join(' ') && h.emitted.some((m) => m.type === 'swarm_escalation' && m.kind === 'budget'))
+    }
+    const people = team({
+      pattern: 'debate', humans: [ALICE], config: { turnTaking: 'moderator', maxCalls: 4 },
+      onEmit: (m, hh) => {
+        if (m.type === 'swarm_escalation') setTimeout(() => hh.run.decideEscalation(m.escalationId, 'continue', ALICE), 1)
+        if (m.type === 'swarm_vote_open') setTimeout(() => hh.run.castVote(ALICE, m.options[0].id), 1)
+      },
+    })
+    const { result, error } = await settle(people)
+    check('... and when the room says continue, the debate finishes on the larger budget', !error && result.outcome === 'completed' && result.stats.calls <= 8 &&
+      speakersOf(people).join(' ') === startsOf(people, 'debate_turn').join(' '))
+  }
+
+  {
+    // The view keeps the room's strategy and the latest decision.
+    let v = { swarm: null, blackboard: null }
+    const feed = (msg) => { v = reduceSwarmView(v, msg) || v }
+    feed({ type: 'swarm_started', runId: 't1', pattern: 'swarm', provider: 'simulated', budget: 16, turnTaking: 'moderator', startedAt: 1, goal: 'g' })
+    check('the view stores the run\'s turn-taking', v.swarm.turnTaking === 'moderator' && v.swarm.turn === null)
+    feed({ type: 'swarm_bids', runId: 't1', round: 3, strategy: 'moderator', bids: [], speakers: ['critic'], by: 'moderator', reason: 'There is a new draft nobody has checked yet.' })
+    check('the view stores the latest turn decision', v.swarm.turn.by === 'moderator' && v.swarm.turn.speakers.join() === 'critic' && v.swarm.turn.round === 3 && /new draft/.test(v.swarm.turn.reason) && v.swarm.bids.bids.length === 0)
+    feed({ type: 'swarm_bids', runId: 't1', round: 4, bids: [{ agentId: 'synthesizer', score: 0.9, reason: 'revise' }, { agentId: 'critic', score: 0.1, reason: '' }] })
+    check('... and reads a pre-strategy bids frame as "the top bid speaks"', v.swarm.turn.by === 'bids' && v.swarm.turn.speakers.join() === 'synthesizer' && v.swarm.turn.strategy === 'moderator')
+    feed({ type: 'swarm_done', runId: 't1', outcome: 'completed', stats: { calls: 9 } })
+    check('... which survives the end of the run and a compact snapshot', compactSwarmView(v.swarm).turn.speakers.join() === 'synthesizer' && compactSwarmView({ ...v.swarm, turn: undefined }).turn === null)
+    let a = { swarm: null, blackboard: null }
+    a = reduceSwarmView(a, { type: 'swarm_started', runId: 't2', pattern: 'auto', provider: 'simulated', budget: 16, turnTaking: null, startedAt: 1, goal: 'g' })
+    a = reduceSwarmView(a, { type: 'swarm_architect', runId: 't2', pattern: 'debate', reason: 'r', turnTaking: 'round_robin' })
+    check('the Architect\'s choice brings that pattern\'s turn-taking', a.swarm.turnTaking === 'round_robin' && a.swarm.pattern === 'debate')
+    const auto = team({ pattern: 'auto', goal: GOALS.debate })
+    await settle(auto)
+    check('... and an Auto run that lands on a debate takes turns in round robin', auto.view.swarm.pattern === 'debate' && auto.view.swarm.turnTaking === 'round_robin' && turnsOf(auto).every((t) => t.strategy === 'round_robin'))
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Server pieces. db.js opens its database on import, so the env must point at
 // a scratch file first: a v1-schema file proves the migration on the way.
 // ---------------------------------------------------------------------------
@@ -576,7 +800,7 @@ async function serverUnits() {
   try {
     const db = await import('../server/db.js')
     const columns = db.default.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name)
-    check('migration adds config and blackboard columns to a v1 file', columns.includes('config') && columns.includes('blackboard'))
+    check('migration adds config, blackboard and swarm_view columns to a v1 file', columns.includes('config') && columns.includes('blackboard') && columns.includes('swarm_view'))
     const old = db.getSession('sess_legacy')
     check('a v1 session reads as a single-agent room', old?.name === 'Old room' && JSON.stringify(old.config) === '{"crew":"single"}' && old.status === 'idle')
     check('session objects never carry the blackboard', !('blackboard' in old))
@@ -611,7 +835,13 @@ async function serverUnits() {
     const plain = agent.sanitizeConfig(undefined)
     check('sanitizeConfig defaults to a single agent on auto', plain.crew === 'single' && plain.pattern === 'auto' && Number.isFinite(plain.maxCalls))
     const wild = agent.sanitizeConfig({ crew: 'team', pattern: 'nope', maxCalls: 999, width: -4, turnTaking: 'chaos' })
-    check('sanitizeConfig clamps unknown patterns and wild knobs', wild.crew === 'team' && wild.pattern === 'auto' && wild.maxCalls === 16 && wild.width === 1 && wild.turnTaking === 'auction')
+    check('sanitizeConfig clamps unknown patterns and wild knobs', wild.crew === 'team' && wild.pattern === 'auto' && wild.maxCalls === 16 && wild.width === 1 && wild.turnTaking === null)
+    const mod = agent.sanitizeConfig({ crew: 'team', pattern: 'swarm', turnTaking: 'moderator' })
+    check('sanitizeConfig keeps an allowed turn-taking and budgets its Moderator', mod.turnTaking === 'moderator' && mod.maxCalls === 16 && agent.sanitizeConfig({ crew: 'team', pattern: 'debate', turnTaking: 'self_select' }).turnTaking === 'round_robin')
+    const toDebate = agent.mergeConfig(mod, { pattern: 'debate' })
+    check('mergeConfig: switching pattern resets turn-taking to the new default', toDebate.turnTaking === 'round_robin' && toDebate.maxCalls === 9)
+    const keep = agent.mergeConfig({ ...toDebate, rounds: 3 }, { turnTaking: 'handoff' })
+    check('mergeConfig: a turn-taking change on the same pattern keeps the other knobs', keep.turnTaking === 'handoff' && keep.rounds === 3 && agent.mergeConfig(keep, { pattern: 'sequential' }).turnTaking === null)
     const free = agent.sanitizeConfig({ crew: 'team', pattern: 'debate', rounds: 9, width: 9 }, 'free')
     check('sanitizeConfig sizes for the provider', free.rounds === 3 && free.width === 3 && free.fanInMs === 240_000)
     const seq = agent.sanitizeConfig({ crew: 'team', pattern: 'sequential', maxCalls: 5 })

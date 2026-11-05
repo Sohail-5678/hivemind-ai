@@ -91,7 +91,7 @@
     {
       "id": "architecture_debate",
       "name": "Peer-to-peer team",
-      "description": "Three equal peers debate in turns, each proposes an answer, and everyone (humans included) votes. The winner writes it up.",
+      "description": "Three equal peers debate in rounds, each proposes an answer, and everyone (humans included) votes. The winner writes it up.",
       "tags": [
         "multi-agent",
         "debate"
@@ -101,7 +101,7 @@
     {
       "id": "architecture_swarm",
       "name": "Swarm team",
-      "description": "Five agents share a blackboard. Each turn they bid to speak, the highest bid wins, and the order emerges from the work itself.",
+      "description": "Five agents share a blackboard and take turns by a strategy you choose (priority bids by default), so the order emerges from the work itself.",
       "tags": [
         "multi-agent",
         "swarm"

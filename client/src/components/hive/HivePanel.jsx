@@ -1,14 +1,14 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
-import { PATTERNS, PATTERN_ORDER, clampConfig } from '@shared/swarm/patterns.js'
+import { PATTERNS, PATTERN_ORDER, TURN_TAKING, clampConfig, turnTakingFor } from '@shared/swarm/patterns.js'
 import { HiveGraph } from './HiveGraph'
 import { BlackboardPanel } from './BlackboardPanel'
 import { AgentRoster } from './AgentRoster'
 import { AgentCardModal } from './AgentCardModal'
 import { MonitorPanel } from './MonitorPanel'
-import { LIVE_AGENT, OUTCOME, boardItemCount, estimateFor, estimateText, patternId, patternName, plural, teamOf } from './format'
+import { LIVE_AGENT, OUTCOME, boardItemCount, estimateFor, estimateText, namesOf, patternId, patternName, plural, teamOf, turnLabel, turnTakingOf } from './format'
 
 const TABS = [['graph', 'Graph'], ['board', 'Board'], ['agents', 'Agents'], ['monitor', 'Monitor']]
-const ENDED = { budget: 'Budget hit', paused: 'Paused', stopped: 'Stopped', redirected: 'Redirected', timeout: 'Timed out', lost: 'Host left', error: 'Error' }
+const ENDED = { budget: 'Budget hit', paused: 'Paused', stopped: 'Stopped', redirected: 'Redirected', timeout: 'Timed out', lost: 'Cut off', error: 'Error' }
 
 function headerState(swarm, status) {
   if (status === 'paused') return { key: 'paused', label: 'Paused' }
@@ -33,11 +33,13 @@ export function HivePanel({ swarm, blackboard, config, you, participants, status
   const brain = swarm?.provider || provider
 
   const idle = status === 'idle' && swarm?.status !== 'running'
-  // After someone switches the architecture between runs, the graph previews
-  // the next team; the last run stays one click away.
-  const nextDiffers = Boolean(swarm) && idle && cfg.crew === 'team' && swarm.requested && swarm.requested !== configured
+  // After someone switches the architecture (or only its turn-taking) between
+  // runs, the graph previews the next team; the last run stays one click away.
+  const nextTurn = configured === 'auto' ? null : turnTakingOf(null, cfg, provider)
+  const turnChanged = Boolean(swarm) && swarm.requested === configured && configured !== 'auto' && turnTakingOf(swarm, cfg, provider) !== nextTurn
+  const nextDiffers = Boolean(swarm) && idle && cfg.crew === 'team' && swarm.requested && (swarm.requested !== configured || turnChanged)
   const [graphView, setGraphView] = useState('next')
-  useEffect(() => { setGraphView('next') }, [configured, swarm?.runId])
+  useEffect(() => { setGraphView('next') }, [configured, nextTurn, swarm?.runId])
   const preview = !swarm || (nextDiffers && graphView === 'next')
 
   const shown = preview ? configured : swarm.pattern || swarm.requested || configured
@@ -49,6 +51,8 @@ export function HivePanel({ swarm, blackboard, config, you, participants, status
   const boardCount = boardItemCount(blackboard)
   const flagCount = preview ? 0 : new Set(Array.isArray(swarm?.monitor?.flags) ? swarm.monitor.flags : []).size
   const people = Array.isArray(participants) ? participants.length : 0
+  // Debate and swarm take turns; the Architect's pick only shows once it is made.
+  const strategy = choosing ? null : turnTakingOf(preview ? null : swarm, preview ? cfg : { ...cfg, pattern: shown }, brain)
 
   const onTabKey = (e) => {
     const i = TABS.findIndex(([k]) => k === tab)
@@ -89,7 +93,7 @@ export function HivePanel({ swarm, blackboard, config, you, participants, status
 
       {nextDiffers && (
         <div className="hv-next" role="group" aria-label="Which team to show">
-          <span>{`Next run: ${patternName(configured)}`}</span>
+          <span>{`Next run: ${patternName(configured)}${nextTurn && TURN_TAKING[nextTurn] ? ` · ${TURN_TAKING[nextTurn].name}` : ''}`}</span>
           <div className="seg hv-next-seg">
             <button type="button" className={graphView === 'next' ? 'active' : ''} aria-pressed={graphView === 'next'} onClick={() => setGraphView('next')}>Next</button>
             <button type="button" className={graphView === 'last' ? 'active' : ''} aria-pressed={graphView === 'last'} onClick={() => setGraphView('last')}>Last run</button>
@@ -126,6 +130,8 @@ export function HivePanel({ swarm, blackboard, config, you, participants, status
         {tab === 'graph' && (
           <div className="hv-pane">
             <p className="hv-summary">{def.summary}</p>
+            {/* Once a debate votes, the turns are over: nobody holds the floor. */}
+            {strategy && <TurnLine strategy={strategy} turn={!preview && swarm?.status === 'running' && !swarm.vote ? swarm.turn : null} team={preview ? {} : swarm?.team} />}
             <HiveGraph
               swarm={preview ? null : swarm}
               blackboard={blackboard}
@@ -162,22 +168,47 @@ export function HivePanel({ swarm, blackboard, config, you, participants, status
   )
 }
 
+// The room's turn-taking and, while a run is live, who has the floor and why
+// (engine.js emitTurn). Between runs it says how the next run takes turns.
+function TurnLine({ strategy, turn, team }) {
+  const t = TURN_TAKING[strategy]
+  if (!t) return null
+  const speakers = Array.isArray(turn?.speakers) ? turn.speakers : []
+  return (
+    <p className="hv-summary">
+      <span className="label-mono">Turn-taking</span>{' '}
+      <strong>{t.name}</strong>
+      {speakers.length > 0
+        ? <>{`. ${namesOf(speakers, team || {})} ${speakers.length > 1 ? 'have' : 'has'} the floor (${turnLabel(turn).toLowerCase()}).`}{turn.reason ? ` ${turn.reason}` : ''}</>
+        : `. ${t.summary}`}
+    </p>
+  )
+}
+
 // Between runs: change this room's architecture, or branch the room and run the
-// same goal under another one to compare them side by side.
+// same goal under another one to compare them side by side. Debate and swarm
+// also pick how their agents take turns.
 function ArchitectureSwitch({ config, provider, onAction, readOnly, hasRun }) {
   const id = useId()
   const current = config.crew === 'team' ? patternId(config) : null
+  const currentTurn = current ? clampConfig(current, provider, config).turnTaking : null
   // Collapsed to one row by default so the panel keeps its height for the team.
   const [open, setOpen] = useState(false)
   const [pick, setPick] = useState(current || 'auto')
+  const [turn, setTurn] = useState(currentTurn)
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
   const toggleRef = useRef(null)
-  useEffect(() => { setPick(current || 'auto') }, [current])
+  useEffect(() => { setPick(current || 'auto'); setTurn(currentTurn) }, [current, currentTurn])
+  // A new architecture starts on its own default; the current one keeps the room's.
+  const choose = (p) => { setPick(p); setTurn(p === current ? currentTurn : turnTakingFor(p)[0] || null) }
+  const turns = turnTakingFor(pick)
+  const pickedTurn = turns.includes(turn) ? turn : turns[0] || null
 
   const disabled = readOnly || typeof onAction !== 'function'
-  const same = pick === current
-  const est = estimateFor(pick, provider, {})
+  const samePattern = pick === current
+  const same = samePattern && pickedTurn === currentTurn
+  const est = estimateFor(pick, provider, samePattern ? { ...config, turnTaking: pickedTurn, maxCalls: undefined } : { turnTaking: pickedTurn })
 
   const run = async (action, extra) => {
     if (disabled || busy) return
@@ -197,9 +228,19 @@ function ArchitectureSwitch({ config, provider, onAction, readOnly, hasRun }) {
     }
   }
 
-  // New defaults for the new pattern: the old budget may be too small for it.
-  const switchTo = () => run('set_config', { config: { ...config, crew: 'team', pattern: pick, ...clampConfig(pick, provider, {}) } })
-  const fork = () => run('fork', { pattern: pick })
+  // New defaults for a new pattern: the old budget may be too small for it.
+  // Same pattern, new turn-taking: the other knobs stay, and a budget still on
+  // its default moves with the new estimate (a Moderator needs more calls).
+  const switchTo = () => {
+    if (!samePattern) return run('set_config', { config: { ...config, crew: 'team', pattern: pick, ...clampConfig(pick, provider, { turnTaking: pickedTurn }) } })
+    const base = clampConfig(pick, provider, config)
+    const onDefault = base.maxCalls === clampConfig(pick, provider, { ...base, maxCalls: undefined }).maxCalls
+    const next = { ...base, turnTaking: pickedTurn }
+    if (onDefault) next.maxCalls = clampConfig(pick, provider, { ...next, maxCalls: undefined }).maxCalls
+    return run('set_config', { config: { ...config, crew: 'team', pattern: pick, ...next } })
+  }
+  const fork = () => run('fork', { pattern: pick, ...(pickedTurn ? { turnTaking: pickedTurn } : {}) })
+  const hint = !same ? `${estimateText(est)}. ${samePattern && pickedTurn ? TURN_TAKING[pickedTurn].summary : PATTERNS[pick].usefulWhen}` : ''
 
   return (
     <div className={`hv-switch${open ? '' : ' is-closed'}`}>
@@ -211,16 +252,26 @@ function ArchitectureSwitch({ config, provider, onAction, readOnly, hasRun }) {
         <div className="hv-switch-body" id={`${id}-body`}>
           <label className="hv-sr" htmlFor={`${id}-pick`}>Architecture</label>
           <span className="hv-select-wrap">
-            <select id={`${id}-pick`} className="hv-select" value={pick} disabled={disabled} onChange={(e) => setPick(e.target.value)}>
+            <select id={`${id}-pick`} className="hv-select" value={pick} disabled={disabled} onChange={(e) => choose(e.target.value)}>
               {PATTERN_ORDER.map((p) => <option key={p} value={p}>{`${PATTERNS[p].name}${p === current ? ' (current)' : ''}`}</option>)}
             </select>
           </span>
-          {!same && <p className="hv-switch-est">{`${estimateText(est)}. ${PATTERNS[pick].usefulWhen}`}</p>}
+          {turns.length > 0 && (
+            <>
+              <label className="hv-sr" htmlFor={`${id}-turn`}>Turn-taking</label>
+              <span className="hv-select-wrap">
+                <select id={`${id}-turn`} className="hv-select" value={pickedTurn || ''} disabled={disabled} onChange={(e) => setTurn(e.target.value)}>
+                  {turns.map((t) => <option key={t} value={t}>{`Turn-taking: ${TURN_TAKING[t].name}${samePattern && t === currentTurn ? ' (current)' : ''}`}</option>)}
+                </select>
+              </span>
+            </>
+          )}
+          {hint && <p className="hv-switch-est">{hint}</p>}
           <div className="hv-switch-actions">
             <button type="button" className="btn btn-sm" disabled={disabled || same || busy !== null} onClick={switchTo}>
-              {busy === 'set_config' ? 'Switching' : 'Switch architecture'}
+              {busy === 'set_config' ? 'Switching' : samePattern ? 'Switch turn-taking' : 'Switch architecture'}
             </button>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={disabled || same || busy !== null || !hasRun} onClick={fork} title={hasRun ? undefined : 'Run the team once, then fork to compare'}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={disabled || samePattern || busy !== null || !hasRun} onClick={fork} title={hasRun ? undefined : 'Run the team once, then fork to compare'}>
               {busy === 'fork' ? 'Forking' : 'Fork with another architecture'}
             </button>
           </div>

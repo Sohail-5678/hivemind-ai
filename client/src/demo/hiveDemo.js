@@ -81,13 +81,14 @@ function directiveOf(event) {
 // Starts one demo run. Returns a controller; call stop() on unmount or replay.
 // `dispatch` receives server-shaped messages for sessionReducer; `notice` is
 // shown once the slate is clean; `onEnd` gets { outcome, stats, pattern,
-// escalations } once the run settles (never after stop()).
-export function startHiveDemo({ scenario: scenarioId = 'auto', pattern, notice = null, dispatch, onEnd, pace = true, beat = 1 }) {
+// escalations } once the run settles (never after stop()). `turnTaking` picks
+// a debate's or a swarm's strategy (clampConfig drops one it does not offer).
+export function startHiveDemo({ scenario: scenarioId = 'auto', pattern, turnTaking = null, notice = null, dispatch, onEnd, pace = true, beat = 1 }) {
   const id = SCENARIOS[scenarioId] ? scenarioId : 'auto'
   const sc = SCENARIOS[id]
   const requested = PATTERNS[pattern] ? pattern : id
   // A fork keeps the scenario but not its tuning: the tight budget belongs to that showcase.
-  const raw = requested === id ? sc.config || {} : {}
+  const raw = { ...(requested === id ? sc.config || {} : {}), ...(turnTaking ? { turnTaking } : {}) }
   const config = { crew: 'team', pattern: requested, ...clampConfig(requested, 'simulated', raw) }
   const tag = `${++demoCounter}`
   const session = { id: `demo_hive_${id}`, name: sc.room, mode: 'live', status: 'idle', provider: 'simulated', config, createdAt: new Date().toISOString() }
@@ -172,7 +173,7 @@ export function startHiveDemo({ scenario: scenarioId = 'auto', pattern, notice =
   function mentionTarget() {
     const swarm = view.swarm
     if (!swarm) return null
-    const team = swarm.order.map((aid) => swarm.team[aid]).filter((a) => a && a.role !== 'architect')
+    const team = swarm.order.map((aid) => swarm.team[aid]).filter((a) => a && a.role !== 'architect' && a.role !== 'moderator')
     const repeats = swarm.pattern === 'debate' || swarm.pattern === 'swarm'
     const preferred = team.find((a) => a.role === sc.mention.role)
     if (preferred && (repeats || preferred.status !== 'done')) return { role: preferred.role, text: sc.mention.text }

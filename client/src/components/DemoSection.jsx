@@ -4,7 +4,7 @@ import { SCRIPT, CAST, expandScript } from '../demo/demoScript'
 import { startHiveDemo, DEMO_PATTERNS, SCENARIOS } from '../demo/hiveDemo'
 import { PatternGlyph } from './hive/PatternGlyph'
 import { sessionReducer, initialSessionState } from '../hooks/sessionReducer'
-import { PATTERNS } from '@shared/swarm/patterns.js'
+import { PATTERNS, TURN_TAKING, turnTakingFor } from '@shared/swarm/patterns.js'
 
 // Two demos behind one switch. The replay is a choreographed multiplayer
 // session; the Hive demo runs the real multi-agent engine in this tab with the
@@ -210,14 +210,34 @@ function seconds(ms) {
   return Math.max(1, Math.round((ms || 0) / 1000))
 }
 
-function hiveSummary(result) {
-  const name = PATTERNS[result.pattern]?.name || 'The'
+function hiveSummary(result, turnTaking) {
+  const name = `${PATTERNS[result.pattern]?.name || 'The'}${turnTaking && TURN_TAKING[turnTaking] ? ` (${TURN_TAKING[turnTaking].name.toLowerCase()})` : ''}`
   if (result.outcome === 'error') return 'The demo hit an error and stopped. Replay to run it again.'
   const calls = result.stats?.calls ?? 0
   const head = `${name} team finished: ${calls} agent call${calls === 1 ? '' : 's'} in ${seconds(result.stats?.elapsedMs)} s`
   const asks = result.escalations || 0
   const tail = result.outcome === 'budget' ? ', stopped at its budget' : asks ? `, after ${asks === 1 ? 'one stop' : `${asks} stops`} to ask the humans` : ''
   return `${head}${tail}. Pick another architecture, or replay this one.`
+}
+
+// How a debate's peers or a swarm's agents take turns (patterns.js TURN_TAKING).
+function TurnPicker({ options, value, onPick }) {
+  return (
+    <div className="demo-arch-options" role="group" aria-labelledby="demo-turn-label">
+      {options.map((id) => (
+        <button
+          key={id}
+          type="button"
+          className="demo-arch-opt"
+          aria-pressed={value === id}
+          title={TURN_TAKING[id].aka}
+          onClick={() => { if (value !== id) onPick(id) }}
+        >
+          <span>{TURN_TAKING[id].name}</span>
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function ArchPicker({ value, onPick }) {
@@ -241,7 +261,7 @@ function ArchPicker({ value, onPick }) {
 
 function HiveDemo({ onGoLive }) {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState)
-  const [choice, setChoice] = useState({ scenario: 'auto', pattern: 'auto', run: 0 })
+  const [choice, setChoice] = useState({ scenario: 'auto', pattern: 'auto', turnTaking: null, run: 0 })
   const [result, setResult] = useState(null)
   const ctlRef = useRef(null)
 
@@ -249,7 +269,7 @@ function HiveDemo({ onGoLive }) {
   // timer, so replaying, switching architecture or leaving never leaks a run.
   useEffect(() => {
     setResult(null)
-    const ctl = startHiveDemo({ scenario: choice.scenario, pattern: choice.pattern, notice: choice.notice, dispatch, onEnd: setResult })
+    const ctl = startHiveDemo({ scenario: choice.scenario, pattern: choice.pattern, turnTaking: choice.turnTaking, notice: choice.notice, dispatch, onEnd: setResult })
     ctlRef.current = ctl
     return () => {
       ctl.stop()
@@ -257,7 +277,9 @@ function HiveDemo({ onGoLive }) {
     }
   }, [choice])
 
-  const pick = (id) => setChoice((c) => ({ scenario: id, pattern: id, run: c.run + 1 }))
+  // A new architecture starts on its default turn-taking.
+  const pick = (id) => setChoice((c) => ({ scenario: id, pattern: id, turnTaking: null, run: c.run + 1 }))
+  const pickTurn = (tid) => setChoice((c) => ({ ...c, turnTaking: tid, run: c.run + 1, notice: `Running the same goal with ${TURN_TAKING[tid].name.toLowerCase()} turn-taking.` }))
   const replay = () => setChoice((c) => ({ ...c, run: c.run + 1, notice: null }))
 
   // The panels talk to the demo the way they talk to a room: resolve on
@@ -268,7 +290,8 @@ function HiveDemo({ onGoLive }) {
     if (action === 'set_config' || action === 'fork') {
       const next = action === 'fork' ? extra.pattern : extra.config?.pattern
       if (!PATTERNS[next]) throw new Error('That architecture is not available.')
-      setChoice((c) => ({ scenario: c.scenario, pattern: next, run: c.run + 1, notice: `Running the same goal as a ${PATTERNS[next].name} team.` }))
+      const turnTaking = (action === 'fork' ? extra.turnTaking : extra.config?.turnTaking) || null
+      setChoice((c) => ({ scenario: c.scenario, pattern: next, turnTaking, run: c.run + 1, notice: `Running the same goal as a ${PATTERNS[next].name} team.` }))
       return { ok: true }
     }
     if (ctlRef.current?.act(action, extra)) return { ok: true }
@@ -279,6 +302,8 @@ function HiveDemo({ onGoLive }) {
   const scenario = SCENARIOS[choice.scenario]
   const forked = choice.pattern !== choice.scenario
   const p = PATTERNS[choice.pattern]
+  const turns = turnTakingFor(choice.pattern)
+  const turn = turns.includes(choice.turnTaking) ? choice.turnTaking : turns[0] || null
   const hint = forked
     ? <>Same goal, new shape: <strong>{p.name}</strong> ({p.aka}).</>
     : <><span className="label-mono">Fits when</span> {p.usefulWhen}</>
@@ -297,7 +322,7 @@ function HiveDemo({ onGoLive }) {
     >
       {running
         ? <>Maya and Jordan are scripted, and so are the agents’ words. The orchestration is real: the same engine that runs live Hive rooms is running in this tab.{scenario.tightBudget && !forked ? ' This team gets a tight budget, so watch the Monitor stop and ask.' : ''}</>
-        : hiveSummary(result)}
+        : hiveSummary(result, turn)}
     </DemoNote>
   )
 
@@ -306,6 +331,12 @@ function HiveDemo({ onGoLive }) {
       <div className="demo-arch">
         <ArchPicker value={choice.pattern} onPick={pick} />
         <p className="demo-arch-hint">{hint}</p>
+        {turn && (
+          <>
+            <p className="demo-arch-hint" id="demo-turn-label"><span className="label-mono">Turn-taking</span> {TURN_TAKING[turn].summary}</p>
+            <TurnPicker options={turns} value={turn} onPick={pickTurn} />
+          </>
+        )}
       </div>
       <SessionWorkspace
         session={state.session}
