@@ -76,11 +76,6 @@
 .bm-core { fill: var(--agent); }
 .bm-human { fill: var(--human); }
 .bm-agent { fill: var(--agent-bright); }
-.brand-ver {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.06em; line-height: 1.5;
-  color: var(--agent); padding: 1px 7px; border-radius: 999px;
-  background: var(--well); box-shadow: var(--neu-inset-sm);
-}
 
 /* Nav: an inset track; the current section is the raised thumb. */
 .nav {
@@ -772,7 +767,7 @@
 }
 
 @media (max-width: 480px) {
-  .brand-word, .brand-ver { display: none; }
+  .brand-word { display: none; }
   .lp-hero-copy .eyebrow { padding: 8px 13px; font-size: 10px; letter-spacing: 0.1em; }
   .lp-actions { width: 100%; }
   .lp-cta { flex: 1 1 0; padding-left: 16px; padding-right: 16px; }

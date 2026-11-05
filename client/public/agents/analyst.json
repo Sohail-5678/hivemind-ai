@@ -3,7 +3,7 @@
   "name": "HiveMind Analyst",
   "description": "Weighs the facts, compares options, and commits to concrete decisions.",
   "url": "https://hivemind-agents.vercel.app/agents/analyst.json",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "provider": {
     "organization": "HiveMind"
   },

@@ -15,7 +15,7 @@ const SECTION_META = {
   about: { title: 'About', sub: 'What HiveMind is, the nine architectures, and how both runtimes are built.' },
 }
 
-const HOME_TITLE = 'HiveMind 2 · Multiplayer, multi-agent rooms'
+const HOME_TITLE = 'HiveMind · Multiplayer, multi-agent rooms'
 
 const RUNTIME_COPY = {
   server: { mode: 'Server', detail: 'WebSocket', title: 'Running on the Node server: WebSocket rooms and a SQLite timeline.' },
@@ -111,7 +111,6 @@ export default function App() {
           <a className="brand" href="#/" aria-label="HiveMind home">
             <BrandMark />
             <span className="brand-word">HiveMind</span>
-            <span className="brand-ver" aria-hidden="true">2</span>
           </a>
           <nav className="nav" aria-label="Sections">
             {SECTIONS.map((key) => (

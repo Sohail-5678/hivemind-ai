@@ -191,7 +191,7 @@ export function AboutSection({ onSelect, runtime }) {
     <div className="about">
       <section className="about-section about-hero" aria-labelledby="about-h-what">
         <div className="about-hero-copy">
-          <span className="eyebrow">HiveMind 2</span>
+          <span className="eyebrow">About HiveMind</span>
           <h2 id="about-h-what">A shared room for a team of people and a team of agents.</h2>
           <p className="about-lede">
             Most AI tools seat one person in front of one model. HiveMind puts the whole team in the room: everyone watches

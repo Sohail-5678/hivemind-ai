@@ -8,3 +8,7 @@ server/data
 *.log
 .claude
 hivemind_ai_context.md
+README.md
+EXPLAINER.md
+diagrams.html
+docs

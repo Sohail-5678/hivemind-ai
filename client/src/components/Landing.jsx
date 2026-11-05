@@ -209,7 +209,7 @@ export function Landing({ runtime }) {
     <div className="landing">
       <section className="lp-hero" aria-labelledby="lp-title">
         <div className="lp-hero-copy">
-          <span className="eyebrow"><span className="dot live" aria-hidden="true" /> HiveMind 2 · multiplayer, multi-agent</span>
+          <span className="eyebrow"><span className="dot live" aria-hidden="true" /> Multiplayer · multi-agent</span>
           <h1 className="lp-title" id="lp-title">
             <span className="lp-title-human">People</span> and <span className="lp-title-agent">agent teams</span>, working in one live room.
           </h1>

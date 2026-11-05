@@ -3,7 +3,7 @@
   "name": "HiveMind",
   "description": "A shared room where a team of humans and a team of AI agents work on one goal together. Choose from nine multi-agent architectures.",
   "url": "https://hivemind-agents.vercel.app",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "provider": {
     "organization": "HiveMind"
   },

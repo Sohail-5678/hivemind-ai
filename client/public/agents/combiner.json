@@ -3,7 +3,7 @@
   "name": "HiveMind Combiner",
   "description": "Fans results back in: merges parallel outputs into one answer and notes anything missing.",
   "url": "https://hivemind-agents.vercel.app/agents/combiner.json",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "provider": {
     "organization": "HiveMind"
   },
