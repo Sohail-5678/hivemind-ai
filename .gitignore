@@ -10,12 +10,3 @@ server/data/
 .claude/
 .vercel
 
-# Private working log (never commit)
-hivemind_ai_context.md
-
-# Project docs stay private (kept locally and in a private repo)
-README.md
-EXPLAINER.md
-diagrams.html
-docs/
-*.md
