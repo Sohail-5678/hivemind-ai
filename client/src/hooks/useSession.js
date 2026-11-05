@@ -1,8 +1,31 @@
 // Server mode: session state over a WebSocket to the Node server.
 // Reconnects with backoff; every (re)join gets a full snapshot from the server.
 import { useEffect, useReducer, useRef, useCallback } from 'react'
+import { DEFAULT_HUMAN_COLOR } from '@shared/palette.js'
 import { api, wsUrl } from '../lib/api'
 import { sessionReducer, initialSessionState } from './sessionReducer'
+
+const TEAM_ACTIONS = new Set(['pin', 'vote', 'escalation', 'set_config'])
+
+// A refresh keeps who you are: the server's leave grace then sees the same
+// user id come back and writes no "left" / "joined" pair. Written only on
+// pagehide and read once, so a duplicated tab (which copies sessionStorage
+// at that moment) never shares an id with the tab it came from.
+const PREV_USER_KEY = 'hivemind_prev_user'
+const PREV_USER = (() => {
+  try {
+    const raw = sessionStorage.getItem(PREV_USER_KEY)
+    sessionStorage.removeItem(PREV_USER_KEY)
+    const prev = raw ? JSON.parse(raw) : null
+    return prev && typeof prev.sessionId === 'string' && typeof prev.id === 'string' ? prev : null
+  } catch { return null }
+})()
+let current = null // { sessionId, id, color } of the room this tab is in
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    try { if (current) sessionStorage.setItem(PREV_USER_KEY, JSON.stringify(current)) } catch { /* storage off */ }
+  })
+}
 
 export function useSession(sessionId, userName) {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState)
@@ -15,6 +38,7 @@ export function useSession(sessionId, userName) {
     // a socket from a previous session (fork hop) can never schedule a
     // reconnect against the new session or clobber wsRef after cleanup.
     const guard = { attempt: 0, timer: null, closed: false, ws: null }
+    if (!youRef.current && PREV_USER?.sessionId === sessionId) youRef.current = { id: PREV_USER.id, color: PREV_USER.color }
 
     const connect = () => {
       if (guard.closed) return
@@ -36,7 +60,10 @@ export function useSession(sessionId, userName) {
         if (guard.closed) return
         let msg
         try { msg = JSON.parse(raw.data) } catch { return }
-        if (msg.type === 'joined') youRef.current = msg.you
+        if (msg.type === 'joined') {
+          youRef.current = msg.you
+          current = { sessionId, id: msg.you.id, color: msg.you.color }
+        }
         if (msg.type === 'error' && msg.error === 'session_not_found') {
           dispatch({ type: 'connection', value: 'error', error: 'This session no longer exists.' })
           guard.closed = true
@@ -54,10 +81,13 @@ export function useSession(sessionId, userName) {
       ws.onerror = () => { try { ws.close() } catch { /* already closed */ } }
     }
 
-    connect()
+    // On a microtask, like the static room: React StrictMode's throwaway mount
+    // in development is cleaned up first, so it never opens a socket.
+    queueMicrotask(connect)
 
     return () => {
       guard.closed = true
+      if (current?.sessionId === sessionId) current = null
       if (guard.timer) clearTimeout(guard.timer)
       const ws = guard.ws
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -68,14 +98,22 @@ export function useSession(sessionId, userName) {
     }
   }, [sessionId, userName])
 
-  const you = state.you || { id: null, name: userName, color: '#255DCE' }
+  const you = state.you || { id: null, name: userName, color: DEFAULT_HUMAN_COLOR }
 
+  // Extras ride along (apiKey; kind/content for a pin, option for a vote,
+  // escalationId/decision, config, pattern) but can never replace who is acting.
   const sendMessage = useCallback(async (content, extra = {}) => {
-    await api.sendMessage(sessionId, { content, user: youRef.current || { name: userName }, ...extra })
+    await api.sendMessage(sessionId, { ...extra, content, user: youRef.current || { name: userName } })
   }, [sessionId, userName])
 
   const act = useCallback(async (action, extra = {}) => {
-    return api.action(sessionId, { action, user: youRef.current || { name: userName }, ...extra })
+    const res = await api.action(sessionId, { ...extra, action, user: youRef.current || { name: userName } })
+    // The server answers a refused team action (no open vote, an escalation
+    // already decided) in the body, and ignores a pin the board already has.
+    // Throw like the static room does, so each control shows why.
+    if (TEAM_ACTIONS.has(action) && res?.ok === false) throw new Error(res.error || 'That didn’t go through. Try again.')
+    if (action === 'pin' && res?.added === false) throw new Error('That’s already on the board.')
+    return res
   }, [sessionId, userName])
 
   const setTyping = useCallback((isTyping) => {

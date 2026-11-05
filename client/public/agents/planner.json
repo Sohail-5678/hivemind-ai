@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Planner",
+  "description": "Turns a goal into a dependency graph of small tasks that can run in parallel where possible.",
+  "url": "https://hivemind-agents.vercel.app/agents/planner.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "plan_dag",
+      "name": "Plan a task graph",
+      "description": "Produces tasks with explicit dependencies.",
+      "tags": [
+        "planning",
+        "dag"
+      ],
+      "examples": []
+    }
+  ]
+}

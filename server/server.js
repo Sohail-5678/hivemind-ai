@@ -7,7 +7,14 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createSession, getSession, getSessionByCode, getEvents, addEvent, forkSession } from './db.js'
 import { attachWebSocket, broadcast, participantsOf } from './websocket.js'
-import { startRun, pauseAgent, resumeAgent, redirectAgent, stopAgent, agentStatus, isRunning, setSessionKey } from './agent.js'
+import {
+  startRun, pauseAgent, resumeAgent, redirectAgent, stopAgent, agentStatus, isRunning, setSessionKey,
+  getSwarmSnapshot, sanitizeConfig, mergeConfig, crewLabel, pinBoard, castVote, decideEscalation, setConfig, logEvent,
+} from './agent.js'
+import { DEFAULT_HUMAN_COLOR } from './palette.js'
+import { PATTERNS, PATTERN_ORDER } from './swarm/patterns.js'
+import { BOARD_KINDS } from './swarm/blackboard.js'
+import { flagInjection } from './swarm/guard.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
@@ -22,6 +29,7 @@ app.disable('x-powered-by')
 const MAX_MESSAGE_CHARS = 4000
 const MAX_REDIRECT_CHARS = 500
 const MAX_NAME_CHARS = 60
+const MAX_PIN_CHARS = 200
 const RATE_LIMIT = { windowMs: 60_000, maxMessages: 20, maxSessions: 15 }
 const rateBuckets = new Map()
 
@@ -42,12 +50,6 @@ setInterval(() => {
   }
 }, 5 * 60_000).unref()
 
-const INJECTION_PATTERNS = [
-  /ignore (all|any|previous|prior|the) .{0,40}instructions/i,
-  /disregard (all|any|previous|prior|the) .{0,40}instructions/i,
-  /you are now (dan|developer mode|unrestricted)/i,
-]
-
 // Strip control characters (keep \t \n \r), trim, cap length.
 const CONTROL_CHARS = new RegExp('[' + String.fromCharCode(0) + '-' + String.fromCharCode(8) + String.fromCharCode(11) + String.fromCharCode(12) + String.fromCharCode(14) + '-' + String.fromCharCode(31) + String.fromCharCode(127) + ']', 'g')
 function cleanText(value, maxLen) {
@@ -59,21 +61,18 @@ function cleanText(value, maxLen) {
 function cleanUser(body) {
   const name = cleanText(body?.user?.name, MAX_NAME_CHARS) || 'Guest'
   const id = typeof body?.user?.id === 'string' && body.user.id.length <= 40 ? body.user.id : 'u_anon'
-  const color = typeof body?.user?.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(body.user.color) ? body.user.color : '#255DCE'
+  const color = typeof body?.user?.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(body.user.color) ? body.user.color : DEFAULT_HUMAN_COLOR
   return { id, name, color }
-}
-
-function flagInjection(text) {
-  return INJECTION_PATTERNS.some((p) => p.test(text))
 }
 
 // ---------------------------------------------------------------------------
 // REST API
 // ---------------------------------------------------------------------------
 
-// The client uses this to detect "full server" mode (vs the static Vercel build).
+// The client uses this to detect "full server" mode (vs the static Vercel build)
+// and that this server runs agent teams (protocol version 2).
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, realtime: 'ws', uptime: process.uptime() })
+  res.json({ ok: true, realtime: 'ws', swarm: true, version: 2, uptime: process.uptime() })
 })
 
 app.get('/api/providers', async (_req, res) => {
@@ -101,21 +100,22 @@ app.get('/api/providers', async (_req, res) => {
 app.post('/api/sessions', (req, res) => {
   const ip = req.ip || 'unknown'
   if (rateLimited(`sess:${ip}`, RATE_LIMIT.maxSessions)) {
-    return res.status(429).json({ error: 'Too many sessions created — wait a minute and try again.' })
+    return res.status(429).json({ error: 'Too many sessions created. Wait a minute and try again.' })
   }
   const name = cleanText(req.body?.name, 80) || 'Untitled Session'
   const mode = ['demo', 'sample', 'live'].includes(req.body?.mode) ? req.body.mode : 'live'
   const provider = ['simulated', 'free', 'ollama', 'groq'].includes(req.body?.provider) ? req.body.provider : 'simulated'
   const model = cleanText(req.body?.model, 60)
-  const session = createSession({ name, mode, provider, model })
+  const config = sanitizeConfig(req.body?.config, provider)
+  const session = createSession({ name, mode, provider, model, config })
   if (provider === 'groq' && typeof req.body?.apiKey === 'string') setSessionKey(session.id, req.body.apiKey)
-  addEvent(session.id, { type: 'system', content: `Session "${name}" created.` })
+  addEvent(session.id, { type: 'system', content: config.crew === 'team' ? `Session "${name}" created with ${crewLabel(config)}.` : `Session "${name}" created.` })
   res.status(201).json({ session })
 })
 
 app.post('/api/join', (req, res) => {
   const ip = req.ip || 'unknown'
-  if (rateLimited(`join:${ip}`, 30)) return res.status(429).json({ error: 'Too many join attempts — slow down.' })
+  if (rateLimited(`join:${ip}`, 30)) return res.status(429).json({ error: 'Too many join attempts. Slow down a little.' })
   const code = cleanText(req.body?.code, 12)
   if (!code) return res.status(400).json({ error: 'Room code required.' })
   const session = getSessionByCode(code)
@@ -126,7 +126,7 @@ app.post('/api/join', (req, res) => {
 app.get('/api/sessions/:id', (req, res) => {
   const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found.' })
-  res.json({ session, events: getEvents(session.id), participants: participantsOf(session.id), agentStatus: agentStatus(session.id) })
+  res.json({ session, events: getEvents(session.id), participants: participantsOf(session.id), agentStatus: agentStatus(session.id), ...getSwarmSnapshot(session.id) })
 })
 
 app.post('/api/sessions/:id/messages', (req, res) => {
@@ -135,7 +135,7 @@ app.post('/api/sessions/:id/messages', (req, res) => {
   const user = cleanUser(req.body)
   const ip = req.ip || 'unknown'
   if (rateLimited(`msg:${ip}:${session.id}`, RATE_LIMIT.maxMessages)) {
-    return res.status(429).json({ error: 'Rate limit hit — max 20 messages per minute.' })
+    return res.status(429).json({ error: 'Rate limit hit: at most 20 messages a minute.' })
   }
   const content = cleanText(req.body?.content, MAX_MESSAGE_CHARS)
   if (!content) return res.status(400).json({ error: 'Message is empty or too long (max 4000 chars).' })
@@ -156,7 +156,7 @@ app.post('/api/sessions/:id/actions', (req, res) => {
   if (!session) return res.status(404).json({ error: 'Session not found.' })
   const user = cleanUser(req.body)
   const ip = req.ip || 'unknown'
-  if (rateLimited(`act:${ip}:${session.id}`, 30)) return res.status(429).json({ error: 'Too many actions — slow down.' })
+  if (rateLimited(`act:${ip}:${session.id}`, 30)) return res.status(429).json({ error: 'Too many actions. Slow down a little.' })
   const action = String(req.body?.action || '')
 
   if (action === 'pause') return res.json(pauseAgent(session.id, user))
@@ -165,15 +165,50 @@ app.post('/api/sessions/:id/actions', (req, res) => {
   if (action === 'redirect') {
     const instruction = cleanText(req.body?.content, MAX_REDIRECT_CHARS)
     if (!instruction) return res.status(400).json({ error: 'Redirect needs an instruction (max 500 chars).' })
-    return res.json(redirectAgent(session.id, instruction, user))
+    // A redirect becomes the team's next goal: flag it like any message.
+    return res.json(redirectAgent(session.id, instruction, user, { flagged: flagInjection(instruction) }))
   }
   if (action === 'fork') {
     const upToEventId = Number.isInteger(req.body?.upToEventId) ? req.body.upToEventId : null
-    const fork = forkSession(session.id, { name: cleanText(req.body?.name, 80), upToEventId })
-    addEvent(fork.id, { type: 'system', content: `Forked from "${session.name}" by ${user.name}.` })
-    addEvent(session.id, { type: 'fork', author: user, content: fork.name, meta: { forkedSessionId: fork.id, upToEventId } })
+    // Fork with another architecture: same goal and board, a different team.
+    const pattern = req.body?.pattern == null || req.body.pattern === '' ? null : String(req.body.pattern)
+    if (pattern && !PATTERN_ORDER.includes(pattern)) return res.status(400).json({ error: `Unknown architecture "${pattern.slice(0, 40)}".` })
+    // A fork is a new session: it counts against the same limit as creating one.
+    if (rateLimited(`sess:${ip}`, RATE_LIMIT.maxSessions)) return res.status(429).json({ error: 'Too many sessions created. Wait a minute and try again.' })
+    const config = pattern ? mergeConfig(session.config, { crew: 'team', pattern }, session.provider) : null
+    const name = cleanText(req.body?.name, 80) || (pattern ? `${session.name} (${PATTERNS[pattern].name})` : null)
+    const fork = forkSession(session.id, { name, upToEventId, config, blackboard: getSwarmSnapshot(session.id).blackboard })
+    addEvent(fork.id, { type: 'system', content: `Forked from "${session.name}" by ${user.name}${pattern ? ` to try ${crewLabel(config)}` : ''}.` })
+    logEvent(session.id, { type: 'fork', author: user, content: fork.name, meta: { forkedSessionId: fork.id, upToEventId, ...(pattern ? { pattern } : {}) } })
     broadcast(session.id, { type: 'session_forked', sessionId: session.id, newSession: fork, by: user })
     return res.json({ ok: true, session: fork })
+  }
+
+  // --- Agent team actions --------------------------------------------------
+  if (action === 'pin') {
+    const kind = String(req.body?.kind || '')
+    if (!BOARD_KINDS.includes(kind)) return res.status(400).json({ error: `Pick a board section: ${BOARD_KINDS.join(', ')}.` })
+    const content = cleanText(req.body?.content, MAX_PIN_CHARS + 1)
+    if (!content || content.length > MAX_PIN_CHARS) return res.status(400).json({ error: `A pin needs 1 to ${MAX_PIN_CHARS} characters.` })
+    // Flagged text is still pinned; the board shows agents it as data only.
+    return res.json(pinBoard(session.id, { kind, content, flagged: flagInjection(content) }, user))
+  }
+  if (action === 'vote') {
+    const option = cleanText(req.body?.option, 80)
+    if (!option) return res.status(400).json({ error: 'A vote needs an option.' })
+    return res.json(castVote(session.id, user, option))
+  }
+  if (action === 'escalation') {
+    const escalationId = cleanText(req.body?.escalationId, 120)
+    const decision = String(req.body?.decision || '')
+    if (!escalationId || !['continue', 'wrap_up'].includes(decision)) return res.status(400).json({ error: 'An escalation needs an id and a decision: continue or wrap_up.' })
+    return res.json(decideEscalation(session.id, escalationId, decision, user))
+  }
+  if (action === 'set_config') {
+    const raw = req.body?.config
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return res.status(400).json({ error: 'set_config needs a config object.' })
+    const result = setConfig(session.id, raw, user)
+    return res.status(result.ok ? 200 : 409).json(result)
   }
   res.status(400).json({ error: `Unknown action "${action}".` })
 })
@@ -190,6 +225,8 @@ if (fs.existsSync(distDir)) {
     setHeaders: (res, filePath) => {
       if (filePath.includes(`${path.sep}assets${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
       else res.setHeader('Cache-Control', 'no-cache')
+      // A2A agent cards are discovery documents: other origins may read them.
+      if (filePath.includes(`${path.sep}.well-known${path.sep}`) || filePath.includes(`${path.sep}agents${path.sep}`)) res.setHeader('Access-Control-Allow-Origin', '*')
     },
   }))
   app.get(/^\/(?!api\/|ws).*/, (_req, res) => {
@@ -222,8 +259,8 @@ function lanAddress() {
 function listen(port, attemptsLeft) {
   server.once('error', (err) => {
     if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
-      console.warn(`Port ${port} is busy — trying ${port + 1}.`)
-      console.warn(`  NOTE: with "npm run dev" the Vite proxy targets port ${Number(process.env.PORT) || 3000} and will NOT follow this fallback — free that port or set PORT for both processes.`)
+      console.warn(`Port ${port} is busy, trying ${port + 1}.`)
+      console.warn(`  NOTE: with "npm run dev" the Vite proxy targets port ${Number(process.env.PORT) || 3000} and will NOT follow this fallback. Free that port or set PORT for both processes.`)
       listen(port + 1, attemptsLeft - 1)
     } else {
       console.error('Failed to start server:', err.message)
@@ -234,7 +271,7 @@ function listen(port, attemptsLeft) {
     const lan = lanAddress()
     console.log('')
     console.log('  ┌──────────────────────────────────────────────┐')
-    console.log('  │   HiveMind — Multiplayer AI Agents           │')
+    console.log('  │   HiveMind: Multiplayer AI Agents            │')
     console.log('  └──────────────────────────────────────────────┘')
     console.log(`   Local:    http://localhost:${port}`)
     if (lan) console.log(`   Network:  http://${lan}:${port}  (share on your WiFi)`)

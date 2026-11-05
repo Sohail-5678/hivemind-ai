@@ -4,6 +4,8 @@
 //   static  — a static deployment (Vercel): the same UI, with multiplayer across
 //             devices via an encrypted relay and agents running in the host tab
 //             (simulated, or Groq through the /api/chat edge function).
+// `swarm` says agent teams are available. The static build always has them (the
+// engine ships in the bundle); a server says so in /api/health from v2 on.
 import { useEffect, useState } from 'react'
 
 let cached = null
@@ -18,10 +20,10 @@ export function detectRuntime() {
       clearTimeout(timer)
       if (res.ok) {
         const data = await res.json().catch(() => null)
-        if (data?.realtime === 'ws') return { mode: 'server' }
+        if (data?.realtime === 'ws') return { mode: 'server', swarm: Boolean(data.swarm), version: Number(data.version) || 1 }
       }
     } catch { /* no server → static */ }
-    return { mode: 'static' }
+    return { mode: 'static', swarm: true, version: 2 }
   })()
   return cached
 }

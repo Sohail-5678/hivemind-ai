@@ -1,0 +1,224 @@
+/* ==========================================================================
+   HiveMind design system: dark neumorphism on a steel base.
+   Palettes (from the brief):
+     steel  #06141B #11212D #253745 #4A5C6A #9BA8AB #CCD0CF   structure
+     sage   #051F20 #0B2B26 #163832 #235347 #8EB69B #DAF1DE   agents
+     rose   #3E3239 #6B5560 #9E8189 #C7A9A3 #E8D2C4 #F7EFE7   humans
+   Light comes from the top left: raised surfaces get a dark shadow bottom
+   right and a soft steel highlight top left; inset wells invert it.
+   ========================================================================== */
+
+:root {
+  /* raw palette */
+  --steel-950: #06141B;
+  --steel-900: #0B1922;
+  --steel-850: #11212D;
+  --steel-800: #172A37;
+  --steel-700: #253745;
+  --steel-500: #4A5C6A;
+  --steel-300: #9BA8AB;
+  --steel-100: #CCD0CF;
+
+  --sage-950: #051F20;
+  --sage-900: #0B2B26;
+  --sage-800: #163832;
+  --sage-600: #235347;
+  --sage-300: #8EB69B;
+  --sage-100: #DAF1DE;
+
+  --rose-900: #3E3239;
+  --rose-700: #6B5560;
+  --rose-500: #9E8189;
+  --rose-300: #C7A9A3;
+  --rose-200: #E8D2C4;
+  --rose-50: #F7EFE7;
+
+  /* semantic surfaces */
+  --bg: #11212D;
+  --surface: #11212D;
+  --surface-hi: #142734;
+  --well: #0D1C26;
+  --line: rgba(155, 168, 171, 0.10);
+  --line-2: rgba(155, 168, 171, 0.18);
+  --edge: rgba(204, 208, 207, 0.045);
+
+  /* text (contrast checked on #11212D) */
+  --text: #E4E8E7;
+  --text-2: #CCD0CF;
+  --text-3: #9BA8AB;
+  --text-4: #7A8A91;
+
+  /* meaning */
+  --agent: #8EB69B;
+  --agent-bright: #DAF1DE;
+  --agent-deep: #235347;
+  --agent-soft: rgba(142, 182, 155, 0.13);
+  --agent-ring: rgba(142, 182, 155, 0.45);
+  --human: #C7A9A3;
+  --human-bright: #E8D2C4;
+  --human-deep: #6B5560;
+  --human-soft: rgba(199, 169, 163, 0.13);
+  --human-ring: rgba(199, 169, 163, 0.45);
+  --danger: #D58B82;
+  --danger-soft: rgba(213, 139, 130, 0.13);
+  --warn: #E8D2C4;
+
+  /* neumorphic shadows */
+  --sh-dark: rgba(3, 10, 14, 0.78);
+  --sh-light: rgba(60, 84, 99, 0.30);
+  --neu-raised: 10px 10px 22px var(--sh-dark), -8px -8px 18px var(--sh-light);
+  --neu-raised-md: 7px 7px 15px var(--sh-dark), -5px -5px 12px var(--sh-light);
+  --neu-raised-sm: 4px 4px 9px var(--sh-dark), -3px -3px 8px var(--sh-light);
+  --neu-inset: inset 7px 7px 14px var(--sh-dark), inset -6px -6px 12px var(--sh-light);
+  --neu-inset-sm: inset 3px 3px 7px var(--sh-dark), inset -3px -3px 6px var(--sh-light);
+  --neu-float: 18px 22px 44px rgba(3, 10, 14, 0.7), -10px -10px 26px rgba(60, 84, 99, 0.22);
+
+  /* shape + type */
+  --r-xl: 30px;
+  --r-lg: 22px;
+  --r-md: 16px;
+  --r-sm: 11px;
+  --r-xs: 8px;
+  --font-display: 'Sora', 'Inter', system-ui, sans-serif;
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px rgba(142, 182, 155, 0.6);
+  --focus-ring: rgba(142, 182, 155, 0.6);       /* the --focus colour, for inset rings on scroll areas */
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+
+body {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-2);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1100px 620px at 12% -12%, rgba(74, 92, 106, 0.20), transparent 62%),
+    radial-gradient(900px 520px at 108% 108%, rgba(35, 83, 71, 0.16), transparent 62%),
+    radial-gradient(760px 460px at -12% 104%, rgba(107, 85, 96, 0.12), transparent 64%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+h1, h2, h3, h4 { font-family: var(--font-display); color: var(--text); font-weight: 500; letter-spacing: -0.02em; }
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input, select, textarea { font: inherit; color: var(--text); }
+a { color: var(--agent); text-decoration: none; }
+code, kbd, .mono { font-family: var(--font-mono); }
+::selection { background: rgba(142, 182, 155, 0.28); color: var(--text); }
+/* The transparent outline never shows here, but forced-colors mode drops
+   box-shadow and paints the outline instead, so focus stays visible there. */
+:focus-visible { outline: 2px solid transparent; outline-offset: 2px; box-shadow: var(--focus); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(155, 168, 171, 0.16); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- surfaces ---------- */
+.neu { background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--neu-raised); border: 1px solid var(--edge); }
+.neu-md { background: var(--surface); border-radius: var(--r-md); box-shadow: var(--neu-raised-md); border: 1px solid var(--edge); }
+.neu-sm { background: var(--surface); border-radius: var(--r-sm); box-shadow: var(--neu-raised-sm); border: 1px solid var(--edge); }
+.neu-inset { background: var(--well); border-radius: var(--r-md); box-shadow: var(--neu-inset); }
+.neu-inset-sm { background: var(--well); border-radius: var(--r-sm); box-shadow: var(--neu-inset-sm); }
+.neu-float { background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--neu-float); border: 1px solid var(--edge); }
+
+/* ---------- labels ---------- */
+.label-mono { font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-4); }
+.eyebrow { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); padding: 8px 15px; border-radius: 999px; background: var(--surface); box-shadow: var(--neu-raised-sm); }
+
+/* ---------- status dot ---------- */
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; background: var(--steel-500); }
+.dot.agent { background: var(--agent); box-shadow: 0 0 10px rgba(142, 182, 155, 0.65); }
+.dot.human { background: var(--human); box-shadow: 0 0 10px rgba(199, 169, 163, 0.55); }
+.dot.live { background: var(--agent); animation: neu-pulse 1.6s var(--ease) infinite; }
+.dot.danger { background: var(--danger); }
+@keyframes neu-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.55; } }
+
+/* ---------- buttons: raised, press in on click ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 20px; border-radius: 999px;
+  font-size: 14px; font-weight: 600; letter-spacing: 0.005em;
+  color: var(--text-2); background: var(--surface);
+  box-shadow: var(--neu-raised-sm); border: 1px solid var(--edge);
+  transition: box-shadow 160ms var(--ease), color 160ms var(--ease), transform 120ms var(--ease);
+}
+.btn:hover:not(:disabled) { color: var(--text); }
+.btn:active:not(:disabled), .btn.pressed { box-shadow: var(--neu-inset-sm); transform: translateY(1px); }
+/* Unavailable controls go flat: no light, no depth (same as the room's action keys). */
+.btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; border-color: var(--line); }
+.btn-primary { color: var(--steel-950); background: linear-gradient(150deg, #A4C8AF, #82AA8F); box-shadow: var(--neu-raised-sm), inset 0 1px 0 rgba(255, 255, 255, 0.25); border-color: transparent; }
+.btn-primary:hover:not(:disabled) { color: var(--steel-950); filter: brightness(1.04); }
+.btn-primary:active:not(:disabled) { box-shadow: inset 3px 3px 7px rgba(5, 31, 32, 0.45), inset -2px -2px 6px rgba(218, 241, 222, 0.35); }
+.btn-human { color: var(--steel-950); background: linear-gradient(150deg, #E1C7BE, #C2A39D); box-shadow: var(--neu-raised-sm), inset 0 1px 0 rgba(255, 255, 255, 0.25); border-color: transparent; }
+.btn-human:hover:not(:disabled) { color: var(--steel-950); filter: brightness(1.04); }
+.btn-human:active:not(:disabled) { box-shadow: inset 3px 3px 7px rgba(62, 50, 57, 0.45), inset -2px -2px 6px rgba(247, 239, 231, 0.35); }
+.btn-ghost { color: var(--text-3); }
+.btn-danger { color: var(--danger); }
+.btn-sm { padding: 7px 14px; font-size: 12.5px; }
+.btn-icon { width: 40px; height: 40px; padding: 0; border-radius: 50%; }
+
+/* ---------- fields: inset wells ---------- */
+.field { display: flex; flex-direction: column; gap: 8px; }
+.field > label, .field-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); }
+.input, .field input, .field select, .field textarea {
+  width: 100%; padding: 12px 16px; border-radius: var(--r-sm);
+  background: var(--well); box-shadow: var(--neu-inset-sm); border: 1px solid transparent;
+  color: var(--text); outline: none; transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.input::placeholder, .field input::placeholder, .field textarea::placeholder { color: var(--text-4); }
+.input:focus, .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--agent-ring); box-shadow: var(--neu-inset-sm), var(--focus); }
+.field select option { background: var(--steel-850); color: var(--text); }
+
+/* ---------- segmented control: inset track, raised thumb ---------- */
+.seg { display: inline-flex; gap: 4px; padding: 5px; border-radius: 999px; background: var(--well); box-shadow: var(--neu-inset-sm); }
+.seg button { padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text-4); transition: color 160ms var(--ease), box-shadow 160ms var(--ease), background 160ms var(--ease); }
+.seg button:hover { color: var(--text-2); }
+.seg button.active { color: var(--text); background: var(--surface-hi); box-shadow: var(--neu-raised-sm); }
+
+/* ---------- chips + badges ---------- */
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--text-3); background: var(--surface); box-shadow: var(--neu-raised-sm); border: 1px solid var(--edge); }
+.chip.agent { color: var(--agent-bright); }
+.chip.human { color: var(--human-bright); }
+.chip.inset { box-shadow: var(--neu-inset-sm); background: var(--well); }
+.badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); background: var(--well); box-shadow: var(--neu-inset-sm); }
+.badge.agent { color: var(--agent); }
+.badge.human { color: var(--human); }
+.badge.danger { color: var(--danger); }
+
+/* Primitives set their own box-shadow, which would hide the global focus ring above,
+   so each one adds the ring on top of its own depth. */
+.btn:focus-visible { box-shadow: var(--neu-raised-sm), var(--focus); }
+.btn:active:focus-visible, .btn.pressed:focus-visible { box-shadow: var(--neu-inset-sm), var(--focus); }
+.seg button:focus-visible { box-shadow: var(--focus); }
+.seg button.active:focus-visible { box-shadow: var(--neu-raised-sm), var(--focus); }
+.chip:focus-visible { box-shadow: var(--neu-raised-sm), var(--focus); }
+.chip.inset:focus-visible { box-shadow: var(--neu-inset-sm), var(--focus); }
+
+/* ---------- avatars ---------- */
+.avatar-neu { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--text); background: var(--surface); box-shadow: var(--neu-raised-sm); position: relative; flex-shrink: 0; }
+.avatar-neu::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1.5px solid var(--ring, var(--steel-500)); opacity: 0.85; }
+.avatar-neu.agent { --ring: var(--agent); color: var(--agent-bright); font-family: var(--font-mono); }
+.avatar-neu.human { --ring: var(--human); color: var(--human-bright); }
+
+/* ---------- motion ---------- */
+@keyframes neu-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes neu-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes neu-spin { to { transform: rotate(360deg); } }
+@keyframes neu-dash { to { stroke-dashoffset: -40; } }
+.rise { animation: neu-rise 420ms var(--ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+/* Fields turn their outline off for the inset look; forced colors need it back. */
+@media (forced-colors: active) {
+  .input:focus, .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid Highlight; outline-offset: 2px; }
+}

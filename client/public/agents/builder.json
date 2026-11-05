@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Builder",
+  "description": "Debate peer who argues for the most ambitious workable option.",
+  "url": "https://hivemind-agents.vercel.app/agents/builder.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "propose",
+      "name": "Propose",
+      "description": "Argues for an ambitious option.",
+      "tags": [
+        "debate"
+      ],
+      "examples": []
+    }
+  ]
+}

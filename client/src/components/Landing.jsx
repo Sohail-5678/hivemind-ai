@@ -1,139 +1,308 @@
-import React, { useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { PATTERNS, PATTERN_ORDER } from '@shared/swarm/patterns.js'
+import { ROLES } from '@shared/swarm/roles.js'
+import { textGlyph } from './PresenceBar'
+import { hintCrew } from './hive'
 
-const MODES = [
-  { key: 'demo', icon: '▶', title: 'Watch the demo', body: 'A choreographed replay of three teammates steering one live agent — presence, mid-stream redirects, forking. No setup, starts instantly.', cta: 'Play demo' },
-  { key: 'sample', icon: '✳', title: 'Try it yourself', body: 'A private session to learn the moves: send a task, redirect the agent mid-stream, pause, resume, fork. Simulated brain or a real LLM.', cta: 'Start solo session' },
-  { key: 'live', icon: '⚡', title: 'Go multiplayer', body: 'Create a shared session, send the room code, and work the same agent together — every teammate sees every token, live.', cta: 'Create a room' },
+// The scene the hive core plays: a Hive room (three people, a debate team)
+// deciding how to open a beta. Each speaker lights up on its ring while its
+// line streams into the readout below.
+const CORE_AGENTS = ['architect', 'builder', 'skeptic', 'pragmatist']
+const CORE_PEOPLE = [
+  { id: 'maya', name: 'Maya', initial: 'M' },
+  { id: 'jordan', name: 'Jordan', initial: 'J' },
+  { id: 'sam', name: 'Sam', initial: 'S' },
+]
+const SCRIPT = [
+  { who: 'maya', text: 'Open the beta to everyone, or start with design partners?' },
+  { who: 'architect', text: 'Peer-to-peer fits: a real tradeoff, so three peers argue and everyone votes.' },
+  { who: 'builder', text: 'Open it to everyone. Feedback volume beats a perfect first week.' },
+  { who: 'skeptic', text: 'Onboarding is untested past 20 seats. Start smaller.' },
+  { who: 'jordan', text: 'Pinned a constraint: support is two people until January.' },
+  { who: 'pragmatist', text: 'Proposal: two cohorts of 25 partners, two weeks apart.' },
+  { who: 'vote', text: 'Vote closed. The Pragmatist wins with 2 agents and 2 people.' },
+]
+const VISIBLE_LINES = 4
+const TYPE_MS = 32
+const HOLD_MS = 1500
+const CALL_BUDGET = 10
+
+const ROOMS = [
+  { key: 'solo', name: 'Solo', who: 'Just you', crew: 'One agent', team: false, section: 'sample', people: 1, agents: 1, line: 'You and one agent. A private place to learn the controls.' },
+  { key: 'agent-team', name: 'Agent team', who: 'Just you', crew: 'Agent team', team: true, section: 'sample', people: 1, agents: 4, line: 'You and a team of agents. Pick an architecture and watch it work.' },
+  { key: 'multiplayer', name: 'Multiplayer', who: 'Your team', crew: 'One agent', team: false, section: 'live', people: 3, agents: 1, line: 'Your team and one agent. Everyone watches and steers the same run.' },
+  { key: 'hive', name: 'Hive', who: 'Your team', crew: 'Agent team', team: true, section: 'live', people: 3, agents: 4, line: 'Your team and an agent team. Pin facts, vote and approve escalations together.' },
+]
+const SECTION_NAME = { sample: 'Sample', live: 'Live' }
+
+const STEPS = [
+  { title: 'Open a room', body: 'Pick Solo, Multiplayer, Agent team or Hive. In Live, share the room code and your team joins in seconds.' },
+  { title: 'Set the goal', body: 'Send a message. In team rooms the agents take turns, hand work to each other and post facts and decisions to a shared board.' },
+  { title: 'Steer it live', body: 'Redirect, pause, pin a constraint, vote with the agents, or fork the room to run the same goal under another architecture.' },
 ]
 
-// A floating "hive" constellation behind the stage: teammates and agents as
-// glowing nodes with signal travelling along the links.
-const NODES = [
-  { x: 60, y: 70, r: 5, cls: 'sky' },
-  { x: 210, y: 28, r: 7, cls: 'cobalt' },
-  { x: 372, y: 96, r: 5, cls: 'red' },
-  { x: 398, y: 250, r: 8, cls: 'cobalt' },
-  { x: 318, y: 392, r: 5, cls: 'sky' },
-  { x: 130, y: 418, r: 6, cls: 'red' },
-  { x: 22, y: 290, r: 4, cls: 'sky' },
-  { x: 236, y: 238, r: 10, cls: 'core' },
-]
-const LINKS = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 0], [7, 1], [7, 3], [7, 5], [7, 0], [7, 2], [7, 4], [7, 6]]
+const speakerOf = (who) => {
+  const person = CORE_PEOPLE.find((p) => p.id === who)
+  if (person) return { kind: 'human', name: person.name }
+  if (ROLES[who]) return { kind: 'agent', name: ROLES[who].name }
+  return { kind: 'system', name: 'Vote' }
+}
 
-export function Landing({ onSelect, runtime }) {
-  const stageRef = useRef(null)
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
 
-  // Mouse-driven parallax tilt for the floating stage cards.
-  const onMove = (e) => {
-    const el = stageRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const x = (e.clientX - rect.left) / rect.width - 0.5
-    const y = (e.clientY - rect.top) / rect.height - 0.5
-    el.style.setProperty('--ry', (x * 10).toFixed(2))
-    el.style.setProperty('--rx', (-y * 10).toFixed(2))
-  }
-  const onLeave = () => {
-    const el = stageRef.current
-    if (!el) return
-    el.style.setProperty('--ry', '0')
-    el.style.setProperty('--rx', '0')
-  }
+// Types the script one line at a time while the core is on screen and the tab
+// is visible. With reduced motion it holds a finished frame instead.
+function useScript(rootRef) {
+  const [reduced] = useState(prefersReducedMotion)
+  const [pos, setPos] = useState(() => (reduced ? { index: 5, chars: SCRIPT[5].text.length } : { index: 0, chars: 0 }))
+  const [active, setActive] = useState(false)
+  const posRef = useRef(pos)
+
+  useEffect(() => {
+    if (reduced) return undefined
+    const el = rootRef.current
+    let inView = true
+    const update = () => setActive(inView && !document.hidden)
+    const io = typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; update() }, { threshold: 0.15 })
+      : null
+    if (io && el) io.observe(el)
+    document.addEventListener('visibilitychange', update)
+    update()
+    return () => {
+      io?.disconnect()
+      document.removeEventListener('visibilitychange', update)
+    }
+  }, [reduced, rootRef])
+
+  useEffect(() => {
+    if (!active) return undefined
+    let timer = null
+    const step = () => {
+      let { index, chars } = posRef.current
+      const len = SCRIPT[index].text.length
+      if (chars < len) {
+        chars = Math.min(len, chars + 2)
+        timer = setTimeout(step, chars < len ? TYPE_MS : HOLD_MS)
+      } else {
+        index = (index + 1) % SCRIPT.length
+        chars = 0
+        timer = setTimeout(step, TYPE_MS)
+      }
+      posRef.current = { index, chars }
+      setPos(posRef.current)
+    }
+    timer = setTimeout(step, TYPE_MS)
+    return () => clearTimeout(timer)
+  }, [active])
+
+  return { ...pos, typing: active && pos.chars < SCRIPT[pos.index].text.length }
+}
+
+function HiveCore() {
+  const rootRef = useRef(null)
+  const { index, chars, typing } = useScript(rootRef)
+  const speaker = SCRIPT[index].who
+  const calls = SCRIPT.slice(0, index + 1).filter((l) => ROLES[l.who]).length
+  const first = Math.max(0, index - VISIBLE_LINES + 1)
+  const lines = SCRIPT.slice(first, index + 1)
 
   return (
-    <div className="landing">
-      <section className="hero">
-        <div className="hero-copy">
-          <span className="eyebrow"><span className="live-dot" /> Multiplayer AI agents</span>
-          <h1 className="display">One agent.<br /><em>In full</em> <span className="red">swarm.</span></h1>
-          <p>
-            AI had its chat moment. This is its multiplayer moment. HiveMind turns an agent session into a shared,
-            living workspace — like a Google Doc, except the document is an agent doing real work your whole team
-            can watch, steer, and hand off.
-          </p>
-          <div className="hero-actions">
-            <button className="btn btn-primary" onClick={() => onSelect('demo')}>▶ Watch the demo</button>
-            <button className="btn btn-ghost" onClick={() => onSelect('live')}>Create a live room →</button>
+    <div className="lp-stage" ref={rootRef}>
+      <div className="lp-core" role="img" aria-label="Three people and four agents in one live room, debating how to open a beta. Each speaker lights up as their words stream in.">
+        <svg className="lp-bezel" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+          <circle className="lp-bezel-ring" cx="100" cy="100" r="98" />
+          {Array.from({ length: 72 }, (_, i) => {
+            const major = i % 6 === 0
+            const a = (i / 72) * Math.PI * 2
+            const r1 = 98
+            const r2 = major ? 93 : 95.5
+            return (
+              <line
+                key={i}
+                className={major ? 'tick major' : 'tick'}
+                x1={100 + Math.sin(a) * r1} y1={100 - Math.cos(a) * r1}
+                x2={100 + Math.sin(a) * r2} y2={100 - Math.cos(a) * r2}
+              />
+            )
+          })}
+          <circle className="lp-orbit-line" cx="100" cy="100" r="89" />
+        </svg>
+
+        <div className="lp-platter" aria-hidden="true">
+          <div className="lp-groove" />
+          <div className="lp-hub">
+            <div className="lp-well">
+              <span className="lp-well-glyph">{textGlyph('⬡')}</span>
+              <span className="lp-well-label">live</span>
+            </div>
           </div>
-          <button className="text-link" onClick={() => onSelect('about')}>How it works &amp; how it's built →</button>
         </div>
 
-        <div className="hero-stage" ref={stageRef} onMouseMove={onMove} onMouseLeave={onLeave}>
-          <svg className="hive-net" viewBox="0 0 420 440" aria-hidden="true">
-            {LINKS.map(([a, b], i) => (
-              <line key={i} className="link" style={{ animationDelay: `${(i * 0.45) % 6}s` }}
-                x1={NODES[a].x} y1={NODES[a].y} x2={NODES[b].x} y2={NODES[b].y} />
-            ))}
-            {NODES.map((n, i) => (
-              <g key={i} className={`node ${n.cls}`} style={{ animationDelay: `${(i * 0.4) % 3}s` }}>
-                <circle className="halo" cx={n.x} cy={n.y} r={n.r * 3} />
-                <circle className="dot" cx={n.x} cy={n.y} r={n.r} />
-              </g>
-            ))}
-          </svg>
+        <div className="lp-orbit agents" aria-hidden="true">
+          {CORE_AGENTS.map((id, i) => (
+            <span key={id} className={`lp-node agent${speaker === id ? ' is-live' : ''}`} style={{ '--a': `${i * 90 + 45}deg` }}>
+              <span className="lp-node-face">{textGlyph(ROLES[id].glyph)}</span>
+            </span>
+          ))}
+        </div>
+        <div className="lp-orbit people" aria-hidden="true">
+          {CORE_PEOPLE.map((p, i) => (
+            <span key={p.id} className={`lp-node human${speaker === p.id ? ' is-live' : ''}`} style={{ '--a': `${i * 120 + 20}deg` }}>
+              <span className="lp-node-face">{p.initial}</span>
+            </span>
+          ))}
+        </div>
 
-          <div className="stage-card float presence glass">
-            <div className="float-head"><span className="live-dot" /> Live now</div>
-            <div className="avatars">
-              <div className="avatar" style={{ background: '#4F8FE8' }}>M</div>
-              <div className="avatar" style={{ background: '#E85D55' }}>J</div>
-              <div className="avatar" style={{ background: '#9DB8FF' }}>S</div>
-              <div className="avatar agent-av">✳</div>
-            </div>
-            <div className="float-sub">3 teammates · 1 agent</div>
-            <div className="float-typing"><span /><span /><span /> Sam is typing</div>
-          </div>
+        <div className="lp-readout tl" aria-hidden="true">
+          <span>people <b>03</b></span>
+          <span>agents <b>04</b></span>
+        </div>
+        <div className="lp-readout br" aria-hidden="true">
+          <span>calls <b>{String(calls).padStart(2, '0')}/{CALL_BUDGET}</b></span>
+          <span>{PATTERNS.debate.name.toLowerCase()}</span>
+        </div>
+      </div>
 
-          <div className="stage-card float stream glass">
-            <div className="float-head">Token stream</div>
-            <div className="eq" aria-hidden="true">
-              {Array.from({ length: 14 }).map((_, i) => <span key={i} style={{ animationDelay: `${(i * 0.13) % 1.1}s` }} />)}
-            </div>
-            <div className="float-sub">fanning out to 3 tabs · ~90 ms</div>
-          </div>
+      <div className="lp-stream" aria-hidden="true">
+        <div className="lp-stream-head">
+          <span className="label-mono">Live token stream</span>
+          <span className="lp-stream-meta"><span className="dot live" /> 3 people watching</span>
+        </div>
+        <div className="lp-stream-body">
+          {lines.map((line, i) => {
+            const at = first + i
+            const current = at === index
+            const who = speakerOf(line.who)
+            return (
+              <p key={at} className={`lp-line ${who.kind}${current ? ' current' : ''}`}>
+                <span className="lp-who">{who.name}</span>
+                <span className="lp-said">
+                  {current ? line.text.slice(0, chars) : line.text}
+                  {current && typing && <span className="caret" />}
+                </span>
+              </p>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
 
-          <div className="stage-card session glass">
-            <div className="mini-presence">
-              <div className="avatars">
-                <div className="avatar" style={{ background: '#4F8FE8' }}>M</div>
-                <div className="avatar" style={{ background: '#E85D55' }}>J</div>
-                <div className="avatar" style={{ background: '#9DB8FF' }}>S</div>
-              </div>
-              <span className="mini-title">Q3 Launch Plan</span>
-              <span className="status-chip running" style={{ marginLeft: 'auto' }}><span className="dot" />Agent working</span>
-            </div>
-            <div className="mini-line">Maya: draft the launch timeline and risks</div>
-            <div className="mini-line agent">✳ On it. Weeks 1–2: feature freeze & hardening. Weeks 3–4: staged rollout at 10% with a crash-rate gate…</div>
-            <div className="mini-line redirect">↪ Jordan redirected: “risks first, pricing after”</div>
-            <div className="mini-line agent">✳ Understood — pivoting to the risk register. <span className="caret" /></div>
+function RoomCrowd({ people, agents }) {
+  return (
+    <span className="lp-crowd" aria-hidden="true">
+      {Array.from({ length: people }, (_, i) => <span key={`p${i}`} className="lp-crowd-person" />)}
+      <span className="lp-crowd-sep" />
+      {Array.from({ length: agents }, (_, i) => <span key={`a${i}`} className="lp-crowd-agent" />)}
+    </span>
+  )
+}
+
+const archGlyphs = (id) => PATTERNS[id].team.slice(0, 3).map((role) => textGlyph(ROLES[role]?.glyph)).join(' ')
+
+export function Landing({ runtime }) {
+  return (
+    <div className="landing">
+      <section className="lp-hero" aria-labelledby="lp-title">
+        <div className="lp-hero-copy">
+          <span className="eyebrow"><span className="dot live" aria-hidden="true" /> HiveMind 2 · multiplayer, multi-agent</span>
+          <h1 className="lp-title" id="lp-title">
+            <span className="lp-title-human">People</span> and <span className="lp-title-agent">agent teams</span>, working in one live room.
+          </h1>
+          <p className="lp-lede">
+            Invite your team, choose one of nine multi-agent architectures, and watch the agents plan, debate and
+            write in real time. Everyone in the room sees every token, can pin facts to a shared board, vote with
+            the agents, and steer the run while it happens.
+          </p>
+          <div className="lp-actions">
+            <a className="btn btn-primary lp-cta" href="#/live">Start a room <span aria-hidden="true">→</span></a>
+            <a className="btn lp-cta" href="#/demo">Watch the demo</a>
           </div>
+          <dl className="lp-facts">
+            <div><dt>architectures</dt><dd>9</dd></div>
+            <div><dt>model options</dt><dd>4</dd></div>
+            <div><dt>to run, no sign-up</dt><dd>$0</dd></div>
+          </dl>
+        </div>
+        <HiveCore />
+      </section>
+
+      <section className="lp-block" aria-labelledby="lp-rooms-title">
+        <div className="lp-block-head">
+          <span className="label-mono">Four rooms</span>
+          <h2 id="lp-rooms-title">Who is in the room, and who does the work.</h2>
+        </div>
+        <div className="lp-rooms">
+          {ROOMS.map((r) => (
+            <a
+              key={r.key}
+              className={`lp-room ${r.key}`}
+              href={`#/${r.section}`}
+              onClick={(e) => {
+                // A plain click opens the setup with this room type picked; a
+                // new-tab click just opens the section.
+                if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) hintCrew(r.section, r.team ? 'team' : 'single')
+              }}
+            >
+              <span className="lp-room-top">
+                <span className="lp-room-axes">{r.who} · {r.crew}</span>
+                <RoomCrowd people={r.people} agents={r.agents} />
+              </span>
+              <span className="lp-room-name">{r.name}</span>
+              <span className="lp-room-line">{r.line}</span>
+              <span className="lp-room-cta">Opens {SECTION_NAME[r.section]} <span aria-hidden="true">→</span></span>
+            </a>
+          ))}
         </div>
       </section>
 
-      <div className="mode-grid">
-        {MODES.map((m) => (
-          <button key={m.key} className={`mode-card glass ${m.key}`} onClick={() => onSelect(m.key)}>
-            <span className="mode-icon">{m.icon}</span>
-            <h3>{m.title}</h3>
-            <p>{m.body}</p>
-            <span className="mode-cta">{m.cta} →</span>
-          </button>
-        ))}
-      </div>
+      <section className="lp-block" aria-labelledby="lp-archs-title">
+        <div className="lp-block-head">
+          <span className="label-mono">Nine architectures</span>
+          <h2 id="lp-archs-title">Choose how the agents organize, or let the Architect choose.</h2>
+        </div>
+        <ol className="lp-archs">
+          {PATTERN_ORDER.map((id, i) => (
+            <li key={id} className="lp-arch">
+              <span className="lp-arch-n">{String(i + 1).padStart(2, '0')}</span>
+              <span className="lp-arch-glyphs" aria-hidden="true">{archGlyphs(id)}</span>
+              <span className="lp-arch-name">{PATTERNS[id].name}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
 
-      <div className="stats-row">
-        <div className="stat"><div className="k">~90 ms</div><div className="v">token fan-out to every teammate</div></div>
-        <div className="stat"><div className="k">5 moves</div><div className="v">message · redirect · pause/resume · stop · fork</div></div>
-        <div className="stat"><div className="k">4 brains</div><div className="v">free model · Groq · Ollama · scripted demo</div></div>
-        <div className="stat"><div className="k">$0</div><div className="v">no accounts, no keys required to run</div></div>
-      </div>
+      <section className="lp-block" aria-labelledby="lp-steps-title">
+        <div className="lp-block-head">
+          <span className="label-mono">How a run works</span>
+          <h2 id="lp-steps-title">Three steps, and you can step in at any point.</h2>
+        </div>
+        <ol className="lp-steps">
+          {STEPS.map((s, i) => (
+            <li key={s.title} className="lp-step">
+              <span className="lp-step-n" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
 
-      <div className="landing-footer">
-        {runtime?.mode === 'server'
-          ? 'Running on the full Node server — WebSocket rooms, SQLite timeline, cross-device multiplayer.'
-          : 'Static deployment — rooms sync across devices through an end-to-end encrypted relay; run the Node server for local models and a persistent room log.'}
-        {' · '}<button className="text-link inline" onClick={() => onSelect('about')}>About this project</button>
-      </div>
+      <footer className="lp-footer">
+        <span className="lp-footer-line">
+          <span className={`runtime-dot ${runtime ? runtime.mode : 'pending'}`} aria-hidden="true" />
+          {!runtime
+            ? 'Checking which runtime is serving this page.'
+            : runtime.mode === 'server'
+              ? 'Running on the Node server: WebSocket rooms and a SQLite timeline.'
+              : 'Static build: rooms sync between devices over an end-to-end encrypted relay, and agents run in the host tab.'}
+        </span>
+        <a className="text-link" href="#/about">How HiveMind is built <span aria-hidden="true">→</span></a>
+      </footer>
     </div>
   )
 }

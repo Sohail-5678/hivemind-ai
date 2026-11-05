@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Monitor",
+  "description": "Deterministic observer (not an LLM): watches budget, time, repeated output and flagged inputs, and escalates to the humans.",
+  "url": "https://hivemind-agents.vercel.app/agents/monitor.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "observe",
+      "name": "Observe and escalate",
+      "description": "Raises budget, loop and policy escalations to humans.",
+      "tags": [
+        "governance",
+        "safety"
+      ],
+      "examples": []
+    }
+  ]
+}

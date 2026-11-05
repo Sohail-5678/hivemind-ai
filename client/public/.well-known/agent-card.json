@@ -1,0 +1,112 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind",
+  "description": "A shared room where a team of humans and a team of AI agents work on one goal together. Choose from nine multi-agent architectures.",
+  "url": "https://hivemind-agents.vercel.app",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "architecture_auto",
+      "name": "Auto team",
+      "description": "An Architect agent reads the goal and designs the team for it, choosing one of the eight patterns at runtime.",
+      "tags": [
+        "multi-agent",
+        "auto"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_sequential",
+      "name": "Sequential team",
+      "description": "Specialists work in a fixed line. Each one’s output is the next one’s input.",
+      "tags": [
+        "multi-agent",
+        "sequential"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_router",
+      "name": "Router team",
+      "description": "A Router reads the request and hands it to the single best specialist. No planning, no merging.",
+      "tags": [
+        "multi-agent",
+        "router"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_orchestrator",
+      "name": "Orchestrator team",
+      "description": "An Orchestrator plans subtasks, delegates them to specialists, and combines the results.",
+      "tags": [
+        "multi-agent",
+        "orchestrator"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_hierarchical",
+      "name": "Hierarchical team",
+      "description": "A VP splits the goal into workstreams, Managers plan each one for Workers, and results roll back up.",
+      "tags": [
+        "multi-agent",
+        "hierarchical"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_parallel",
+      "name": "Parallel team",
+      "description": "A Planner draws a task graph with dependencies. Independent tasks run at the same time; a Synthesizer joins them.",
+      "tags": [
+        "multi-agent",
+        "parallel"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_fanout",
+      "name": "Fan-out / Fan-in team",
+      "description": "A Splitter fans the goal out to several personas who work in parallel; a Combiner merges what comes back.",
+      "tags": [
+        "multi-agent",
+        "fanout"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_debate",
+      "name": "Peer-to-peer team",
+      "description": "Three equal peers debate in turns, each proposes an answer, and everyone (humans included) votes. The winner writes it up.",
+      "tags": [
+        "multi-agent",
+        "debate"
+      ],
+      "examples": []
+    },
+    {
+      "id": "architecture_swarm",
+      "name": "Swarm team",
+      "description": "Five agents share a blackboard. Each turn they bid to speak, the highest bid wins, and the order emerges from the work itself.",
+      "tags": [
+        "multi-agent",
+        "swarm"
+      ],
+      "examples": []
+    }
+  ]
+}

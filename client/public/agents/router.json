@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Router",
+  "description": "Classifies a request by intent and hands it to the one specialist best suited to answer.",
+  "url": "https://hivemind-agents.vercel.app/agents/router.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "route",
+      "name": "Intent routing",
+      "description": "Reads agent cards and dispatches the request to one specialist.",
+      "tags": [
+        "routing",
+        "triage"
+      ],
+      "examples": []
+    }
+  ]
+}

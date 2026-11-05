@@ -1,0 +1,10 @@
+node_modules
+client/node_modules
+client/dist
+server/data
+.env
+.env.*
+.DS_Store
+*.log
+.claude
+hivemind_ai_context.md

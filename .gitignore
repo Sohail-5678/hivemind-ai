@@ -9,3 +9,6 @@ server/data/
 *.log
 .claude/
 .vercel
+
+# Private working log (never commit)
+hivemind_ai_context.md

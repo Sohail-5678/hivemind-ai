@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Critic",
+  "description": "Verifies drafts: checks claims against the facts, finds gaps, and approves or asks for a revision.",
+  "url": "https://hivemind-agents.vercel.app/agents/critic.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "verify",
+      "name": "Verify draft",
+      "description": "Reviews a draft and returns APPROVE or REVISE with fixes.",
+      "tags": [
+        "verification"
+      ],
+      "examples": []
+    }
+  ]
+}

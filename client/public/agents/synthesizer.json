@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Synthesizer",
+  "description": "Pulls the team’s facts and decisions together into a single answer for the humans.",
+  "url": "https://hivemind-agents.vercel.app/agents/synthesizer.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "synthesize",
+      "name": "Synthesize",
+      "description": "Writes the combined answer from the shared blackboard.",
+      "tags": [
+        "synthesis"
+      ],
+      "examples": []
+    }
+  ]
+}

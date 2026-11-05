@@ -3,26 +3,35 @@ import { WebSocketServer } from 'ws'
 import { randomUUID } from 'node:crypto'
 import { getSession, getEvents, addEvent } from './db.js'
 // Circular with agent.js is fine: both sides only call at runtime.
-import { agentStatus, getRunSnapshot } from './agent.js'
-
-// Presence palette drawn from the HiveMind theme (cobalt / red / sky / tints).
-const PRESENCE_COLORS = ['#4F8FE8', '#E85D55', '#9DB8FF', '#DE1110', '#7B61FF', '#2BB3A3', '#F0A23B', '#C56BD6']
+import { agentStatus, getRunSnapshot, getSwarmSnapshot } from './agent.js'
+// Presence colours stay in the human (rose and sand) family; agents are sage.
+import { HUMAN_COLORS } from './palette.js'
 
 const rooms = new Map() // sessionId -> Set<client>
 let colorCursor = 0
 
-function safeSend(ws, payload) {
+// A dropped socket (refresh, phone switching networks) gets a short grace
+// before it counts as leaving. A rejoin with the same user id inside the grace
+// cancels the leave, so a refresh writes no "left" / "joined" pair.
+const LEAVE_GRACE_MS = Number(process.env.HIVEMIND_LEAVE_GRACE_MS) || 8000
+const pendingLeaves = new Map() // `${sessionId}:${userId}` -> timer
+
+// `data` is a payload object or an already-serialized frame.
+function safeSend(ws, data) {
   if (ws.readyState === ws.OPEN) {
-    try { ws.send(JSON.stringify(payload)) } catch { /* connection died mid-send */ }
+    try { ws.send(typeof data === 'string' ? data : JSON.stringify(data)) } catch { /* connection died mid-send */ }
   }
 }
 
 export function broadcast(sessionId, payload, { except = null } = {}) {
   const room = rooms.get(sessionId)
   if (!room) return
+  // Serialize once per message, not once per client: team runs stream tokens
+  // from several agents to every client in the room.
+  const frame = JSON.stringify(payload)
   for (const client of room) {
     if (client === except) continue
-    safeSend(client.ws, payload)
+    safeSend(client.ws, frame)
   }
 }
 
@@ -30,6 +39,15 @@ export function participantsOf(sessionId) {
   const room = rooms.get(sessionId)
   if (!room) return []
   return [...room].map((c) => ({ id: c.user.id, name: c.user.name, color: c.user.color, typing: c.typing || false }))
+}
+
+// How many connections in the room carry this user id (one person, several tabs).
+function connectionsOf(sessionId, userId) {
+  const room = rooms.get(sessionId)
+  if (!room) return 0
+  let n = 0
+  for (const c of room) if (c.user?.id === userId) n++
+  return n
 }
 
 function joinRoom(client, sessionId) {
@@ -93,7 +111,7 @@ export function attachWebSocket(httpServer) {
           safeSend(ws, { type: 'error', error: 'session_not_found' })
           return
         }
-        if (client.sessionId) announceLeave(client)
+        if (client.sessionId) announceLeave(client, { now: true })
         const name = String(msg.user?.name || 'Guest').slice(0, 40) || 'Guest'
         const requestedId = typeof msg.user?.id === 'string' && msg.user.id.length <= 40 ? msg.user.id : null
         client.user = {
@@ -101,12 +119,20 @@ export function attachWebSocket(httpServer) {
           name,
           color: msg.user?.color && /^#[0-9A-Fa-f]{6}$/.test(msg.user.color)
             ? msg.user.color
-            : PRESENCE_COLORS[colorCursor++ % PRESENCE_COLORS.length],
+            : HUMAN_COLORS[colorCursor++ % HUMAN_COLORS.length],
         }
         joinRoom(client, session.id)
-        addEvent(session.id, { type: 'join', author: client.user })
-        // Snapshot for the joiner: session, timeline, who's here, and the
-        // in-flight run so a mid-stream joiner sees the text streamed so far.
+        const graceKey = `${session.id}:${client.user.id}`
+        const returning = pendingLeaves.has(graceKey) || connectionsOf(session.id, client.user.id) > 1
+        if (pendingLeaves.has(graceKey)) {
+          clearTimeout(pendingLeaves.get(graceKey))
+          pendingLeaves.delete(graceKey)
+        }
+        if (!returning) addEvent(session.id, { type: 'join', author: client.user })
+        // Snapshot for the joiner: session, timeline, who's here, the
+        // in-flight run so a mid-stream joiner sees the text streamed so far,
+        // and the agent team's view (graph, roster, vote, monitor) + blackboard.
+        const { swarm, blackboard } = getSwarmSnapshot(session.id)
         safeSend(ws, {
           type: 'joined',
           session,
@@ -115,11 +141,13 @@ export function attachWebSocket(httpServer) {
           events: getEvents(session.id),
           agentStatus: agentStatus(session.id),
           streaming: getRunSnapshot(session.id),
+          swarm,
+          blackboard,
         })
         broadcast(session.id, {
           type: 'presence',
           participants: participantsOf(session.id),
-          joined: client.user,
+          ...(returning ? {} : { joined: client.user }),
         }, { except: client })
         return
       }
@@ -141,22 +169,37 @@ export function attachWebSocket(httpServer) {
         return
       }
 
-      if (msg.type === 'leave') announceLeave(client)
+      if (msg.type === 'leave') announceLeave(client, { now: true })
     })
 
     ws.on('close', () => announceLeave(client))
     ws.on('error', () => announceLeave(client))
   })
 
-  function announceLeave(client) {
+  // An explicit leave (the Leave button, switching rooms) is immediate; a
+  // dropped socket waits out LEAVE_GRACE_MS first.
+  function announceLeave(client, { now = false } = {}) {
     const { sessionId, user } = client
     if (client.typingTimer) { clearTimeout(client.typingTimer); client.typingTimer = null }
     if (!sessionId) return
     leaveRoom(client)
-    if (user) {
+    if (!user) return
+    const graceKey = `${sessionId}:${user.id}`
+    const finish = () => {
+      pendingLeaves.delete(graceKey)
+      // Still here in another tab: nobody left.
+      if (connectionsOf(sessionId, user.id) > 0) return
+      if (!getSession(sessionId)) return
       addEvent(sessionId, { type: 'leave', author: user })
       broadcast(sessionId, { type: 'presence', participants: participantsOf(sessionId), left: user })
     }
+    if (pendingLeaves.has(graceKey)) clearTimeout(pendingLeaves.get(graceKey))
+    if (now) { finish(); return }
+    // The presence bar updates at once; the timeline line waits for the grace.
+    broadcast(sessionId, { type: 'presence', participants: participantsOf(sessionId) })
+    const timer = setTimeout(finish, LEAVE_GRACE_MS)
+    timer.unref?.()
+    pendingLeaves.set(graceKey, timer)
   }
 
   // Heartbeat: drop dead connections so presence stays truthful.

@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Writer",
+  "description": "Writes the deliverable the humans asked for, clearly and in the right format.",
+  "url": "https://hivemind-agents.vercel.app/agents/writer.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "write",
+      "name": "Write deliverable",
+      "description": "Drafts the final answer for the humans.",
+      "tags": [
+        "writing"
+      ],
+      "examples": []
+    }
+  ]
+}

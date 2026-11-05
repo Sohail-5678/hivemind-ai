@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Analyst",
+  "description": "Weighs the facts, compares options, and commits to concrete decisions.",
+  "url": "https://hivemind-agents.vercel.app/agents/analyst.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "analyze",
+      "name": "Analyze and decide",
+      "description": "Turns facts into decisions with reasons.",
+      "tags": [
+        "analysis"
+      ],
+      "examples": []
+    }
+  ]
+}

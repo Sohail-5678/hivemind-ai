@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Manager",
+  "description": "Middle of a hierarchy: breaks one workstream into worker tasks and summarizes the results upward.",
+  "url": "https://hivemind-agents.vercel.app/agents/manager.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "local_plan",
+      "name": "Local planning",
+      "description": "Plans one workstream for workers.",
+      "tags": [
+        "hierarchy"
+      ],
+      "examples": []
+    }
+  ]
+}

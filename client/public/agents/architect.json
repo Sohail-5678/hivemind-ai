@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Architect",
+  "description": "Chooses the multi-agent architecture for a goal, weighing cost, latency and the shape of the work.",
+  "url": "https://hivemind-agents.vercel.app/agents/architect.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "choose_architecture",
+      "name": "Choose architecture",
+      "description": "Picks one of the nine HiveMind architectures and explains the tradeoff.",
+      "tags": [
+        "meta",
+        "planning"
+      ],
+      "examples": []
+    }
+  ]
+}

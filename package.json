@@ -14,7 +14,9 @@
     "start": "npm --prefix client run build && node server/server.js",
     "serve": "node server/server.js",
     "preview:static": "npm --prefix client run build && npm --prefix client run preview",
-    "test": "node test/smoke.test.js"
+    "test": "node test/swarm.test.js && node test/smoke.test.js",
+    "test:swarm": "node test/swarm.test.js",
+    "test:smoke": "node test/smoke.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",

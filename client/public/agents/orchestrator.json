@@ -1,0 +1,40 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "HiveMind Orchestrator",
+  "description": "Decomposes a goal into subtasks, delegates each to a specialist, and combines their results.",
+  "url": "https://hivemind-agents.vercel.app/agents/orchestrator.json",
+  "version": "2.0.0",
+  "provider": {
+    "organization": "HiveMind"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "decompose",
+      "name": "Task decomposition",
+      "description": "Splits a goal into delegated subtasks.",
+      "tags": [
+        "planning"
+      ],
+      "examples": []
+    },
+    {
+      "id": "synthesize",
+      "name": "Synthesis",
+      "description": "Combines specialist outputs into one answer.",
+      "tags": [
+        "synthesis"
+      ],
+      "examples": []
+    }
+  ]
+}
